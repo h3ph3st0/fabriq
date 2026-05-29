@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     const { base64Image, mimeType, serviceType, fileName } = await req.json()
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-preview-05-20' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
     const servicePrompts: Record<string, string> = {
       dtf: `Eres un experto técnico en impresión DTF (Direct to Film) sobre telas y prendas de vestir.
