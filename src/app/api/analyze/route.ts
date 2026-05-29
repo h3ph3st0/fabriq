@@ -2,15 +2,42 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Rate limiting simple en memoria
+const requestCounts = new Map<string, { count: number; resetTime: number }>()
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const windowMs = 60 * 1000 // 1 minuto
+  const maxRequests = 10 // máximo 10 análisis por minuto por IP
+
+  const record = requestCounts.get(ip)
+
+  if (!record || now > record.resetTime) {
+    requestCounts.set(ip, { count: 1, resetTime: now + windowMs })
+    return true
+  }
+
+  if (record.count >= maxRequests) {
+    return false
+  }
+
+  record.count++
+  return true
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function callGeminiWithRetry(prompt: string, imagePart: { inlineData: { data: string; mimeType: string } }, maxRetries = 3) {
+async function callGeminiWithRetry(
+  prompt: string,
+  imagePart: { inlineData: { data: string; mimeType: string } },
+  maxRetries = 3
+) {
   const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     for (const modelName of models) {
       try {
@@ -20,16 +47,20 @@ async function callGeminiWithRetry(prompt: string, imagePart: { inlineData: { da
       } catch (error: unknown) {
         const isLastAttempt = attempt === maxRetries
         const err = error as { status?: number; message?: string }
-        const isOverloaded = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('overloaded')
-        const isUnavailable = err?.status === 429 || err?.message?.includes('429')
+        const isOverloaded =
+          err?.status === 503 ||
+          err?.message?.includes('503') ||
+          err?.message?.includes('overloaded')
+        const isUnavailable =
+          err?.status === 429 || err?.message?.includes('429')
 
         if ((isOverloaded || isUnavailable) && !isLastAttempt) {
-          const waitTime = attempt * 2000 // 2s, 4s, 6s
+          const waitTime = attempt * 2000
           console.log(`Intento ${attempt} fallido con ${modelName}, esperando ${waitTime}ms...`)
           await sleep(waitTime)
           continue
         }
-        
+
         if (isLastAttempt) throw error
       }
     }
@@ -39,8 +70,43 @@ async function callGeminiWithRetry(prompt: string, imagePart: { inlineData: { da
 
 export async function POST(req: NextRequest) {
   try {
-    const { base64Image, mimeType, serviceType, fileName, alturaCm, anchoCm, cantidad } = await req.json()
+    // Rate limiting
+    const ip =
+      req.headers.get('x-forwarded-for') ||
+      req.headers.get('x-real-ip') ||
+      'unknown'
 
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json(
+        { message: 'Demasiadas solicitudes. Esperá un minuto antes de intentar de nuevo.' },
+        { status: 429 }
+      )
+    }
+
+    const { base64Image, mimeType, serviceType, fileName, alturaCm, anchoCm, cantidad } =
+      await req.json()
+
+    // Validar que llegó una imagen real
+    if (!base64Image || !mimeType) {
+      return NextResponse.json({ message: 'Archivo inválido.' }, { status: 400 })
+    }
+
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp']
+    if (!allowedMimeTypes.includes(mimeType)) {
+      return NextResponse.json(
+        { message: 'Tipo de archivo no permitido. Solo PNG, JPG y WEBP.' },
+        { status: 400 }
+      )
+    }
+
+    if (base64Image.length > 14 * 1024 * 1024) {
+      return NextResponse.json(
+        { message: 'El archivo es demasiado grande. Máximo 10MB.' },
+        { status: 400 }
+      )
+    }
+
+    // Info de medidas para incluir en el prompt
     const medidaInfo = alturaCm
       ? `MEDIDAS ESPECIFICADAS POR EL CLIENTE:
          - Alto: ${alturaCm}cm
@@ -88,7 +154,7 @@ Evaluá:
 
 Precios base por peso estimado en ARS:
 - Hasta 50g: 3000 ARS
-- 50 a 150g: 6500 ARS  
+- 50 a 150g: 6500 ARS
 - 150 a 300g: 12000 ARS
 - Más de 300g: 18000 ARS
 - Factor de complejidad geométrica entre 1.0 y 2.0
@@ -148,12 +214,15 @@ Respondé ÚNICAMENTE con un JSON válido, sin texto adicional, sin backticks, c
   } catch (error: unknown) {
     console.error('Error en análisis Gemini:', error)
     const err = error as { message?: string }
-    const isOverloaded = err?.message?.includes('503') || err?.message?.includes('overloaded') || err?.message?.includes('unavailable')
-    
+    const isOverloaded =
+      err?.message?.includes('503') ||
+      err?.message?.includes('overloaded') ||
+      err?.message?.includes('unavailable')
+
     const message = isOverloaded
       ? 'La IA está muy ocupada en este momento. Esperá unos segundos y volvé a intentar.'
-      : (err?.message || 'Error interno del servidor')
-    
+      : err?.message || 'Error interno del servidor'
+
     return NextResponse.json({ message }, { status: 500 })
   }
 }
