@@ -85,7 +85,12 @@ export default function Dashboard() {
     .reduce((sum, o) => sum + (o.price_ars || 0), 0)
 
   return (
-    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a',
+      backgroundImage: 'url(/fondo.png)',
+      backgroundSize: '350px',
+      backgroundRepeat: 'repeat',
+      backgroundBlendMode: 'overlay',
+      opacity: 1, color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
       {/* Header */}

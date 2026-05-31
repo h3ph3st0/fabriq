@@ -71,6 +71,10 @@ export default function AdminLogin() {
     <main style={{
       minHeight: '100vh',
       background: '#0a0a0a',
+      backgroundImage: 'url(/fondo.png)',
+      backgroundSize: '350px',
+      backgroundRepeat: 'repeat',
+      backgroundBlendMode: 'overlay',
       color: '#f0ece3',
       fontFamily: "'DM Sans', sans-serif",
       display: 'flex',

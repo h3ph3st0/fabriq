@@ -101,14 +101,22 @@ export default function Precios() {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', background: '#0a0a0a',
+      backgroundImage: 'url(/fondo.png)',
+      backgroundSize: '350px',
+      backgroundRepeat: 'repeat',
+      backgroundBlendMode: 'overlay', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Loader2 size={32} color="#e85d04" style={{ animation: 'spin 1s linear infinite' }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 
   return (
-    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a',
+      backgroundImage: 'url(/fondo.png)',
+      backgroundSize: '350px',
+      backgroundRepeat: 'repeat',
+      backgroundBlendMode: 'overlay', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
       <header style={{ borderBottom: '1px solid #1e1e1e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
