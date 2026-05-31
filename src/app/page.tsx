@@ -216,9 +216,20 @@ export default function AdminLogin() {
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#444', fontSize: 12, marginTop: 24 }}>
-          ¿Sos cliente? <a href="/" style={{ color: '#e85d04', textDecoration: 'none' }}>Cotizá tu pedido acá</a>
-        </p>
+        <a href="/" style={{
+  display: 'block',
+  textAlign: 'center',
+  marginTop: 24,
+  padding: '14px',
+  borderRadius: 10,
+  border: '1px solid #2a2a2a',
+  color: '#e85d04',
+  textDecoration: 'none',
+  fontSize: 14,
+  fontFamily: "'DM Sans', sans-serif",
+}}>
+  ¿Sos cliente? → Cotizá tu pedido acá
+</a>
       </div>
     </main>
   )
