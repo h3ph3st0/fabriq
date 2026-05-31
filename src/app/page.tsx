@@ -31,7 +31,8 @@ export default function AdminLogin() {
     boxSizing: 'border-box' as const,
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault()
     if (!email || !password) { setError('Completá todos los campos.'); return }
     if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return }
     setLoading(true); setError(''); setSuccess('')
@@ -61,201 +62,220 @@ export default function AdminLogin() {
   }
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      background: '#0a0a0a',
-      backgroundImage: 'url(/fondo.png)',
-      backgroundSize: '350px',
-      backgroundRepeat: 'repeat',
-      backgroundBlendMode: 'overlay',
-      color: '#f0ece3',
-      fontFamily: "'DM Sans', sans-serif",
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '32px 24px',
-      gap: 16,
-    }}>
+    <>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        body {
+          margin: 0;
+          background-color: #0a0a0a;
+          background-image: url(/fondo.png);
+          background-size: 350px;
+          background-repeat: repeat;
+        }
+        /* Solo mostrar fondo en pantallas grandes */
+        @media (max-width: 640px) {
+          body {
+            background-image: none;
+          }
+        }
+      `}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-      {/* Logo */}
-      <div style={{ textAlign: 'center', marginBottom: 8 }}>
-        <div style={{
-          width: 48, height: 48,
-          background: 'linear-gradient(135deg, #e85d04, #f48c06)',
-          borderRadius: 12,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto 12px',
-        }}>
-          <Box size={24} color="#fff" />
-        </div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>FabriQ</h1>
-        <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Plataforma de manufactura on-demand</p>
-      </div>
+      <main style={{
+        minHeight: '100vh',
+        color: '#f0ece3',
+        fontFamily: "'DM Sans', sans-serif",
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px 24px',
+        gap: 16,
+      }}>
 
-      {/* Banner Cliente — llamativo y separado */}
-      <div style={{ width: '100%', maxWidth: 420 }}>
-        <button
-          onClick={() => { window.location.href = '/' }}
-          style={{
-            width: '100%',
-            background: 'linear-gradient(135deg, rgba(232,93,4,0.2), rgba(244,140,6,0.1))',
-            border: '1px solid rgba(232,93,4,0.4)',
-            borderRadius: 14,
-            padding: '18px 24px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            transition: 'all 0.2s',
-            marginBottom: 12,
-          }}
-        >
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
           <div style={{
             width: 48, height: 48,
             background: 'linear-gradient(135deg, #e85d04, #f48c06)',
-            borderRadius: 10,
+            borderRadius: 12,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
+            margin: '0 auto 12px',
           }}>
-            <Bot size={26} color="#fff" />
+            <Box size={24} color="#fff" />
           </div>
-          <div style={{ flex: 1, textAlign: 'left' }}>
-            <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#e85d04', letterSpacing: '-0.3px' }}>
-              Clientes
-            </p>
-            <p style={{ margin: '3px 0 0', fontSize: 12, color: '#a06030', lineHeight: 1.4 }}>
-              La IA analiza tu diseño y cotiza en 30 segundos
-            </p>
-          </div>
-          <span style={{ color: '#e85d04', fontSize: 22 }}>→</span>
-        </button>
+          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>FabriQ</h1>
+          <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Plataforma de manufactura on-demand</p>
+        </div>
 
-        {/* Card login */}
-        <div style={{
-          background: 'rgba(17,17,17,0.92)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid #1e1e1e',
-          borderRadius: 16,
-          padding: '28px 32px',
-        }}>
-          {/* Tabs */}
-          <div style={{
-            display: 'flex',
-            marginBottom: 24,
-            background: 'rgba(10,10,10,0.8)',
-            borderRadius: 10,
-            padding: 4,
-            border: '1px solid #1e1e1e',
-            gap: 2,
-          }}>
-            {(['login', 'register'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => { setTab(t); setError(''); setSuccess('') }}
-                style={{
-                  flex: 1, padding: '9px 4px',
-                  borderRadius: 7, border: 'none',
-                  background: tab === t ? '#1e1e1e' : 'transparent',
-                  color: tab === t ? '#f0ece3' : '#555',
-                  fontSize: 13, fontWeight: tab === t ? 500 : 400,
-                  fontFamily: "'DM Sans', sans-serif",
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                {t === 'login' ? 'Iniciar sesión' : 'Registrarse'}
-              </button>
-            ))}
-          </div>
+        <div style={{ width: '100%', maxWidth: 420 }}>
 
-          {/* Campos */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="taller@email.com"
-              style={inputStyle}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            />
-          </div>
-
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Contraseña
-            </label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Mínimo 8 caracteres"
-                style={{ ...inputStyle, paddingRight: 48 }}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              />
-              <button
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: 'absolute', right: 14, top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none', border: 'none',
-                  cursor: 'pointer', color: '#666', padding: 0,
-                }}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div style={{
-              marginBottom: 16, padding: '12px 16px',
-              background: 'rgba(239,68,68,0.1)',
-              border: '1px solid rgba(239,68,68,0.2)',
-              borderRadius: 8, color: '#ef4444', fontSize: 13,
-            }}>
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div style={{
-              marginBottom: 16, padding: '12px 16px',
-              background: 'rgba(74,222,128,0.1)',
-              border: '1px solid rgba(74,222,128,0.2)',
-              borderRadius: 8, color: '#4ade80', fontSize: 13,
-            }}>
-              {success}
-            </div>
-          )}
-
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
+          {/* Banner Cliente */}
+          <a
+            href="/"
             style={{
-              width: '100%', padding: '14px',
-              borderRadius: 10, border: 'none',
-              background: loading ? '#1a1a1a' : '#e85d04',
-              color: loading ? '#444' : '#fff',
-              fontSize: 15, fontWeight: 600,
-              fontFamily: "'DM Sans', sans-serif",
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              width: '100%',
+              background: 'linear-gradient(135deg, rgba(232,93,4,0.2), rgba(244,140,6,0.1))',
+              border: '1px solid rgba(232,93,4,0.4)',
+              borderRadius: 14,
+              padding: '18px 24px',
+              cursor: 'pointer',
+              marginBottom: 12,
+              textDecoration: 'none',
+              boxSizing: 'border-box' as const,
             }}
           >
-            {loading
-              ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Procesando...</>
-              : tab === 'login' ? 'Entrar al panel' : 'Crear cuenta'
-            }
-          </button>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{
+              width: 48, height: 48,
+              background: 'linear-gradient(135deg, #e85d04, #f48c06)',
+              borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Bot size={26} color="#fff" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#e85d04', letterSpacing: '-0.3px' }}>
+                Clientes
+              </p>
+              <p style={{ margin: '3px 0 0', fontSize: 12, color: '#a06030', lineHeight: 1.4 }}>
+                La IA analiza tu diseño y cotiza en 30 segundos
+              </p>
+            </div>
+            <span style={{ color: '#e85d04', fontSize: 22 }}>→</span>
+          </a>
+
+          {/* Card login */}
+          <div style={{
+            background: 'rgba(17,17,17,0.95)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid #1e1e1e',
+            borderRadius: 16,
+            padding: '28px 32px',
+          }}>
+            {/* Tabs */}
+            <div style={{
+              display: 'flex',
+              marginBottom: 24,
+              background: 'rgba(10,10,10,0.8)',
+              borderRadius: 10,
+              padding: 4,
+              border: '1px solid #1e1e1e',
+              gap: 2,
+            }}>
+              {(['login', 'register'] as const).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => { setTab(t); setError(''); setSuccess('') }}
+                  style={{
+                    flex: 1, padding: '9px 4px',
+                    borderRadius: 7, border: 'none',
+                    background: tab === t ? '#1e1e1e' : 'transparent',
+                    color: tab === t ? '#f0ece3' : '#555',
+                    fontSize: 13, fontWeight: tab === t ? 500 : 400,
+                    fontFamily: "'DM Sans', sans-serif",
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                >
+                  {t === 'login' ? 'Iniciar sesión' : 'Registrarse'}
+                </button>
+              ))}
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="taller@email.com"
+                  style={inputStyle}
+                  autoComplete="email"
+                />
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Contraseña
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    style={{ ...inputStyle, paddingRight: 48 }}
+                    autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute', right: 14, top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none', border: 'none',
+                      cursor: 'pointer', color: '#666', padding: 0,
+                    }}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <div style={{
+                  marginBottom: 16, padding: '12px 16px',
+                  background: 'rgba(239,68,68,0.1)',
+                  border: '1px solid rgba(239,68,68,0.2)',
+                  borderRadius: 8, color: '#ef4444', fontSize: 13,
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {success && (
+                <div style={{
+                  marginBottom: 16, padding: '12px 16px',
+                  background: 'rgba(74,222,128,0.1)',
+                  border: '1px solid rgba(74,222,128,0.2)',
+                  borderRadius: 8, color: '#4ade80', fontSize: 13,
+                }}>
+                  {success}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  width: '100%', padding: '14px',
+                  borderRadius: 10, border: 'none',
+                  background: loading ? '#1a1a1a' : '#e85d04',
+                  color: loading ? '#444' : '#fff',
+                  fontSize: 15, fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {loading
+                  ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Procesando...</>
+                  : tab === 'login' ? 'Entrar al panel' : 'Crear cuenta'
+                }
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   )
 }
