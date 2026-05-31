@@ -1,10 +1,10 @@
 'use client'
-// src/app/admin/page.tsx — Login del taller
+// src/app/admin/page.tsx
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Box, Loader2, Eye, EyeOff, Zap } from 'lucide-react'
 
 type Tab = 'login' | 'register' | 'cliente'
 
@@ -60,12 +60,6 @@ export default function AdminLogin() {
     }
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'login', label: 'Iniciar sesión' },
-    { key: 'register', label: 'Registrarse' },
-    { key: 'cliente', label: 'Soy Cliente' },
-  ]
-
   return (
     <main style={{
       minHeight: '100vh',
@@ -96,7 +90,7 @@ export default function AdminLogin() {
             <Box size={24} color="#fff" />
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>FabriQ</h1>
-          <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Panel del taller</p>
+          <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Plataforma de manufactura on-demand</p>
         </div>
 
         {/* Card */}
@@ -105,170 +99,170 @@ export default function AdminLogin() {
           backdropFilter: 'blur(12px)',
           border: '1px solid #1e1e1e',
           borderRadius: 16,
-          padding: '32px',
+          overflow: 'hidden',
         }}>
-          {/* 3 Tabs */}
-          <div style={{
-            display: 'flex',
-            marginBottom: 28,
-            background: 'rgba(10,10,10,0.8)',
-            borderRadius: 10,
-            padding: 4,
-            border: '1px solid #1e1e1e',
-            gap: 2,
-          }}>
-            {tabs.map(t => (
-              <button
-                key={t.key}
-                onClick={() => { setTab(t.key); setError(''); setSuccess('') }}
-                style={{
-                  flex: 1,
-                  padding: '9px 4px',
-                  borderRadius: 7,
-                  border: 'none',
-                  background: tab === t.key
-                    ? t.key === 'cliente' ? 'rgba(232,93,4,0.15)' : '#1e1e1e'
-                    : 'transparent',
-                  color: tab === t.key
-                    ? t.key === 'cliente' ? '#e85d04' : '#f0ece3'
-                    : '#555',
-                  fontSize: 12,
-                  fontWeight: tab === t.key ? 500 : 400,
-                  fontFamily: "'DM Sans', sans-serif",
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  outline: tab === t.key && t.key === 'cliente'
-                    ? '1px solid rgba(232,93,4,0.2)'
-                    : 'none',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
+
+          {/* Banner "Soy Cliente" siempre visible arriba */}
+          <div
+            onClick={() => window.location.href = '/'}
+            style={{
+              background: tab === 'cliente'
+                ? 'linear-gradient(135deg, rgba(232,93,4,0.25), rgba(244,140,6,0.15))'
+                : 'rgba(232,93,4,0.08)',
+              borderBottom: `1px solid ${tab === 'cliente' ? 'rgba(232,93,4,0.4)' : 'rgba(232,93,4,0.15)'}`,
+              padding: '16px 24px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'linear-gradient(135deg, rgba(232,93,4,0.2), rgba(244,140,6,0.1))')}
+            onMouseLeave={e => (e.currentTarget.style.background = tab === 'cliente' ? 'linear-gradient(135deg, rgba(232,93,4,0.25), rgba(244,140,6,0.15))' : 'rgba(232,93,4,0.08)')}
+          >
+            <div style={{
+              width: 36, height: 36,
+              background: 'linear-gradient(135deg, #e85d04, #f48c06)',
+              borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Zap size={18} color="#fff" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#e85d04' }}>
+                ¿Querés cotizar un pedido?
+              </p>
+              <p style={{ margin: 0, fontSize: 11, color: '#a06030', marginTop: 2 }}>
+                Subí tu diseño → la IA analiza y cotiza en 30 segundos
+              </p>
+            </div>
+            <span style={{ color: '#e85d04', fontSize: 18, fontWeight: 300 }}>→</span>
           </div>
 
-          {/* Contenido según tab */}
-          {tab === 'cliente' ? (
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
-              <div style={{
-                width: 56, height: 56,
-                background: 'rgba(232,93,4,0.1)',
-                borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 16px',
-                border: '1px solid rgba(232,93,4,0.2)',
-              }}>
-                <Box size={24} color="#e85d04" />
-              </div>
-              <h3 style={{ fontSize: 16, fontWeight: 500, margin: '0 0 8px' }}>
-                ¿Querés cotizar un pedido?
-              </h3>
-              <p style={{ color: '#666', fontSize: 13, lineHeight: 1.6, margin: '0 0 24px' }}>
-                Subí tu diseño, la IA analiza viabilidad técnica y genera el precio en 30 segundos. Sin registro.
-              </p>
-              <button
-                onClick={() => router.push('/')}
-                style={{
-                  width: '100%', padding: '14px',
-                  borderRadius: 10, border: 'none',
-                  background: '#e85d04',
-                  color: '#fff',
-                  fontSize: 15, fontWeight: 600,
-                  fontFamily: "'DM Sans', sans-serif",
-                  cursor: 'pointer',
-                }}
-              >
-                Cotizar mi pedido →
-              </button>
+          {/* Tabs login/register */}
+          <div style={{ padding: '24px 32px 0' }}>
+            <div style={{
+              display: 'flex',
+              marginBottom: 24,
+              background: 'rgba(10,10,10,0.8)',
+              borderRadius: 10,
+              padding: 4,
+              border: '1px solid #1e1e1e',
+              gap: 2,
+            }}>
+              {(['login', 'register'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => { setTab(t); setError(''); setSuccess('') }}
+                  style={{
+                    flex: 1,
+                    padding: '9px 4px',
+                    borderRadius: 7,
+                    border: 'none',
+                    background: tab === t ? '#1e1e1e' : 'transparent',
+                    color: tab === t ? '#f0ece3' : '#555',
+                    fontSize: 13,
+                    fontWeight: tab === t ? 500 : 400,
+                    fontFamily: "'DM Sans', sans-serif",
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {t === 'login' ? 'Iniciar sesión' : 'Registrarse'}
+                </button>
+              ))}
             </div>
-          ) : (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Email
-                </label>
+
+            {/* Campos */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="taller@email.com"
+                style={inputStyle}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              />
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Contraseña
+              </label>
+              <div style={{ position: 'relative' }}>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="taller@email.com"
-                  style={inputStyle}
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Mínimo 8 caracteres"
+                  style={{ ...inputStyle, paddingRight: 48 }}
                   onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                 />
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute', right: 14, top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none', border: 'none',
+                    cursor: 'pointer', color: '#666', padding: 0,
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
+            </div>
 
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Contraseña
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="Mínimo 8 caracteres"
-                    style={{ ...inputStyle, paddingRight: 48 }}
-                    onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                  />
-                  <button
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute', right: 14, top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none', border: 'none',
-                      cursor: 'pointer', color: '#666', padding: 0,
-                    }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
+            {error && (
+              <div style={{
+                marginBottom: 16, padding: '12px 16px',
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.2)',
+                borderRadius: 8, color: '#ef4444', fontSize: 13,
+              }}>
+                {error}
               </div>
+            )}
 
-              {error && (
-                <div style={{
-                  marginBottom: 16, padding: '12px 16px',
-                  background: 'rgba(239,68,68,0.1)',
-                  border: '1px solid rgba(239,68,68,0.2)',
-                  borderRadius: 8, color: '#ef4444', fontSize: 13,
-                }}>
-                  {error}
-                </div>
-              )}
+            {success && (
+              <div style={{
+                marginBottom: 16, padding: '12px 16px',
+                background: 'rgba(74,222,128,0.1)',
+                border: '1px solid rgba(74,222,128,0.2)',
+                borderRadius: 8, color: '#4ade80', fontSize: 13,
+              }}>
+                {success}
+              </div>
+            )}
+          </div>
 
-              {success && (
-                <div style={{
-                  marginBottom: 16, padding: '12px 16px',
-                  background: 'rgba(74,222,128,0.1)',
-                  border: '1px solid rgba(74,222,128,0.2)',
-                  borderRadius: 8, color: '#4ade80', fontSize: 13,
-                }}>
-                  {success}
-                </div>
-              )}
-
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                style={{
-                  width: '100%', padding: '14px',
-                  borderRadius: 10, border: 'none',
-                  background: loading ? '#1a1a1a' : '#e85d04',
-                  color: loading ? '#444' : '#fff',
-                  fontSize: 15, fontWeight: 600,
-                  fontFamily: "'DM Sans', sans-serif",
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  transition: 'all 0.2s',
-                }}
-              >
-                {loading
-                  ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Procesando...</>
-                  : tab === 'login' ? 'Entrar al panel' : 'Crear cuenta'
-                }
-              </button>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </>
-          )}
+          {/* Botón submit */}
+          <div style={{ padding: '0 32px 32px' }}>
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              style={{
+                width: '100%', padding: '14px',
+                borderRadius: 10, border: 'none',
+                background: loading ? '#1a1a1a' : '#e85d04',
+                color: loading ? '#444' : '#fff',
+                fontSize: 15, fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif",
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                transition: 'all 0.2s',
+              }}
+            >
+              {loading
+                ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Procesando...</>
+                : tab === 'login' ? 'Entrar al panel' : 'Crear cuenta'
+              }
+            </button>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
         </div>
       </div>
     </main>
