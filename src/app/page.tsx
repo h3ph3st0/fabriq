@@ -111,8 +111,8 @@ export default function AdminLogin() {
         <div style={{ width: '100%', maxWidth: 420 }}>
 
           {/* Banner Cliente */}
-          <a
-            href="/"
+            <div
+            onClick={() => { window.open('/', '_self') }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -124,7 +124,6 @@ export default function AdminLogin() {
               padding: '18px 24px',
               cursor: 'pointer',
               marginBottom: 12,
-              textDecoration: 'none',
               boxSizing: 'border-box' as const,
             }}
           >
@@ -146,7 +145,7 @@ export default function AdminLogin() {
               </p>
             </div>
             <span style={{ color: '#e85d04', fontSize: 22 }}>→</span>
-          </a>
+            </div>
 
           {/* Card login */}
           <div style={{
