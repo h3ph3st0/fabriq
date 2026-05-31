@@ -111,8 +111,8 @@ export default function AdminLogin() {
 
         <div style={{ width: '100%', maxWidth: 420 }}>
 
-          {/* BANNER CLIENTES — link HTML puro */}
-          <a href="https://fabriq-kappa.vercel.app/" className="cliente-banner">
+          {/* BANNER CLIENTES — ruta del cotizador */}
+          <a href="/cliente" className="cliente-banner">
             <div style={{
               width: 48, height: 48,
               background: 'linear-gradient(135deg, #e85d04, #f48c06)',
