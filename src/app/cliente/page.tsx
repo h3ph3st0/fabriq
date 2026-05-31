@@ -144,18 +144,25 @@ export default function Cliente() {
   }
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      background: '#0a0a0a',
-      backgroundImage: 'url(/fondo.png)',
-      backgroundSize: '350px',
-      backgroundRepeat: 'repeat',
-      backgroundBlendMode: 'overlay',
-      color: '#f0ece3',
-      fontFamily: "'DM Sans', sans-serif",
-      padding: '0',
-    }}>
+    <>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        body {
+          margin: 0;
+          background-color: #0a0a0a;
+          background-image: url(/fondo.png);
+          background-size: 350px;
+          background-repeat: repeat;
+        }
+        @media (max-width: 640px) { body { background-image: none; } }
+      `}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <main style={{
+        minHeight: '100vh',
+        color: '#f0ece3',
+        fontFamily: "'DM Sans', sans-serif",
+        padding: '0',
+      }}>
 
       {/* Header */}
       <header style={{
@@ -325,7 +332,6 @@ export default function Cliente() {
         {step === 'analyzing' && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
             <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>
               Analizando tu diseño...
             </h2>
@@ -666,6 +672,7 @@ export default function Cliente() {
           </div>
         )}
       </div>
-    </main>
+      </main>
+    </>
   )
 }
