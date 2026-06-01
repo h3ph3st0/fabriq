@@ -126,15 +126,14 @@ export default function Home() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
       <main style={{
-        minHeight: '100vh',
-        background: '#0a0a0a',
-        backgroundImage: 'url(/fondo.png)',
-        backgroundSize: '350px',
-        backgroundRepeat: 'repeat',
-        backgroundBlendMode: 'overlay',
-        color: '#f0ece3',
-        fontFamily: "'DM Sans', sans-serif",
-      }}>
+  minHeight: '100vh',
+  background: '#0a0a0a',
+  backgroundImage: 'url(/fondo.png)',
+  backgroundSize: '350px',
+  backgroundRepeat: 'repeat',
+  color: '#f0ece3',
+  fontFamily: "'DM Sans', sans-serif",
+}}>
         {/* Header */}
         <header style={{ borderBottom: '1px solid #1e1e1e', padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(8px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -145,9 +144,21 @@ export default function Home() {
             <span style={{ marginLeft: 4, fontSize: 11, background: '#1e1e1e', color: '#888', padding: '2px 8px', borderRadius: 20, fontFamily: "'DM Mono', monospace" }}>beta</span>
           </div>
           {/* Link discreto para talleres */}
-          <a href="/admin" style={{ fontSize: 12, color: '#444', textDecoration: 'none' }}>
-            Acceso talleres →
-          </a>
+          <a href="/admin" style={{
+  fontSize: 12,
+  color: '#e85d04',
+  textDecoration: 'none',
+  border: '1px solid rgba(232,93,4,0.3)',
+  borderRadius: 8,
+  padding: '7px 14px',
+  background: 'rgba(232,93,4,0.05)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+}}>
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+  Panel de talleres
+</a>
         </header>
 
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '60px 24px' }}>
