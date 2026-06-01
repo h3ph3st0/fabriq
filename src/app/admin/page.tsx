@@ -1,161 +1,302 @@
 'use client'
-import { useState } from 'react'
+// src/app/admin/dashboard/page.tsx
+
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy } from 'lucide-react'
+import QRCode from 'qrcode'
 
-export default function AdminLogin() {
+type Order = {
+  id: string
+  created_at: string
+  customer_email: string
+  file_name: string
+  file_url: string
+  service_type: string
+  price_ars: number
+  status: string
+  notes: string
+  ai_analysis: {
+    viable: boolean
+    copyright_alert: boolean
+    issues: string[]
+    recommendations: string[]
+    estimated_time: string
+    price_breakdown: { description: string }
+  }
+}
+
+type ShopConfig = {
+  codigo_taller: string
+  nombre_taller: string
+}
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  pending:       { label: 'Pendiente',     color: '#888' },
+  quoted:        { label: 'Cotizado',      color: '#f59e0b' },
+  in_production: { label: 'En producción', color: '#3b82f6' },
+  done:          { label: 'Entregado',     color: '#4ade80' },
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  dtf: 'DTF', '3d': '3D', sublimacion: 'Sublimación'
+}
+
+export default function Dashboard() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<Order | null>(null)
+  const [userEmail, setUserEmail] = useState('')
+  const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('')
+  const [showQr, setShowQr] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  const inputStyle = {
-    width: '100%',
-    padding: '14px 16px',
-    background: 'rgba(10,10,10,0.8)',
-    border: '1px solid #2a2a2a',
-    borderRadius: 10,
-    color: '#f0ece3',
-    fontSize: 15,
-    fontFamily: "'DM Sans', sans-serif",
-    outline: 'none',
-    boxSizing: 'border-box' as const,
+  useEffect(() => {
+    checkAuth()
+  }, [])
+
+  async function checkAuth() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { router.push('/admin'); return }
+    setUserEmail(session.user.email || '')
+    await loadShopConfig(session.user.id)
+    await loadOrders()
   }
 
-  async function handleSubmit(e?: React.FormEvent) {
-    if (e) e.preventDefault()
-    if (!email || !password) { setError('Completá todos los campos.'); return }
-    if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return }
-    setLoading(true); setError('')
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) throw error
-      router.push('/admin/dashboard')
-    } catch (err: unknown) {
-      const e = err as { message?: string }
-      if (e?.message?.includes('Invalid login credentials')) setError('Email o contraseña incorrectos.')
-      else setError(e?.message || 'Error. Intentá de nuevo.')
-    } finally { setLoading(false) }
+  async function loadShopConfig(userId: string) {
+    const { data } = await supabase
+      .from('shop_config')
+      .select('codigo_taller, nombre_taller')
+      .eq('user_id', userId)
+      .single()
+
+    if (data) {
+      setShopConfig(data)
+      // Generar QR con la URL del taller
+      const tallerUrl = `${window.location.origin}/?taller=${data.codigo_taller}`
+      const qrUrl = await QRCode.toDataURL(tallerUrl, {
+        width: 300,
+        margin: 2,
+        color: { dark: '#f0ece3', light: '#111111' }
+      })
+      setQrDataUrl(qrUrl)
+    }
   }
+
+  async function loadOrders() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (!error && data) setOrders(data)
+    setLoading(false)
+  }
+
+  async function updateStatus(orderId: string, status: string) {
+    await supabase.from('orders').update({ status }).eq('id', orderId)
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o))
+    if (selected?.id === orderId) setSelected(prev => prev ? { ...prev, status } : null)
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.replace('/admin')
+  }
+
+  function copyLink() {
+    if (!shopConfig) return
+    const link = `${window.location.origin}/?taller=${shopConfig.codigo_taller}`
+    navigator.clipboard.writeText(link)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function downloadQr() {
+    if (!qrDataUrl) return
+    const a = document.createElement('a')
+    a.href = qrDataUrl
+    a.download = `fabriq-qr-${shopConfig?.codigo_taller || 'taller'}.png`
+    a.click()
+  }
+
+  const totalRevenue = orders
+    .filter(o => o.status === 'done')
+    .reduce((sum, o) => sum + (o.price_ars || 0), 0)
+
+  const tallerUrl = shopConfig ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?taller=${shopConfig.codigo_taller}` : ''
 
   return (
-    <>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        body {
-          margin: 0;
-          background-color: #0a0a0a;
-          background-image: url(/fondo.png);
-          background-size: 350px;
-          background-repeat: repeat;
-        }
-        @media (max-width: 640px) { body { background-image: none; } }
-      `}</style>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-      <main style={{
-        minHeight: '100vh',
-        color: '#f0ece3',
-        fontFamily: "'DM Sans', sans-serif",
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '32px 24px',
-        gap: 16,
-      }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 8 }}>
-          <div style={{
-            width: 48, height: 48,
-            background: 'linear-gradient(135deg, #e85d04, #f48c06)',
-            borderRadius: 12,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 12px',
-          }}>
-            <Box size={24} color="#fff" />
+      {/* Header */}
+      <header style={{ borderBottom: '1px solid #1e1e1e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #e85d04, #f48c06)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Box size={18} color="#fff" />
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>FabriQ</h1>
-          <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Panel de talleres</p>
+          <span style={{ fontWeight: 600 }}>FabriQ</span>
+          <span style={{ color: '#444', fontSize: 13 }}>/ Dashboard</span>
+          {shopConfig?.nombre_taller && (
+            <span style={{ color: '#666', fontSize: 13 }}>· {shopConfig.nombre_taller}</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ color: '#666', fontSize: 13 }}>{userEmail}</span>
+          <button onClick={() => setShowQr(!showQr)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', color: showQr ? '#e85d04' : '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
+            <QrCode size={14} /> Mi QR
+          </button>
+          <button onClick={() => router.push('/admin/precios')} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
+            <Settings size={14} /> Precios
+          </button>
+          <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
+            <LogOut size={14} /> Salir
+          </button>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
+
+        {/* Panel QR */}
+        {showQr && shopConfig && (
+          <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 16, padding: 32, marginBottom: 32, display: 'flex', gap: 32, alignItems: 'center' }}>
+            {qrDataUrl && (
+              <img src={qrDataUrl} alt="QR del taller" style={{ width: 160, height: 160, borderRadius: 12 }} />
+            )}
+            <div style={{ flex: 1 }}>
+              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>
+                Código de tu taller
+              </p>
+              <p style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px', fontFamily: "'DM Mono', monospace", color: '#e85d04', letterSpacing: 4 }}>
+                {shopConfig.codigo_taller}
+              </p>
+              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px', lineHeight: 1.5 }}>
+                Compartí este QR o link con tus clientes. Al escanearlo, van directo a tu cotizadora y sus pedidos quedan asignados a tu taller.
+              </p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={copyLink} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: copied ? 'rgba(74,222,128,0.1)' : 'transparent', color: copied ? '#4ade80' : '#888', cursor: 'pointer', fontSize: 13, fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Copy size={13} /> {copied ? '¡Copiado!' : 'Copiar link'}
+                </button>
+                <button onClick={downloadQr} style={{ padding: '10px 16px', borderRadius: 8, border: 'none', background: '#e85d04', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Download size={13} /> Descargar QR
+                </button>
+              </div>
+              <p style={{ color: '#333', fontSize: 11, marginTop: 12, fontFamily: "'DM Mono', monospace", wordBreak: 'break-all' }}>
+                {tallerUrl}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Métricas */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+          {[
+            { label: 'Total órdenes', value: orders.length, color: '#f0ece3' },
+            { label: 'En producción', value: orders.filter(o => o.status === 'in_production').length, color: '#3b82f6' },
+            { label: 'Entregadas', value: orders.filter(o => o.status === 'done').length, color: '#4ade80' },
+            { label: 'Revenue total', value: `$${totalRevenue.toLocaleString('es-AR')}`, color: '#e85d04' },
+          ].map((m, i) => (
+            <div key={i} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px' }}>
+              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>{m.label}</p>
+              <p style={{ fontSize: 28, fontWeight: 600, margin: 0, fontFamily: "'DM Mono', monospace", color: m.color }}>{m.value}</p>
+            </div>
+          ))}
         </div>
 
-        <div style={{ width: '100%', maxWidth: 400 }}>
-          {/* Card login */}
-          <div style={{
-            background: 'rgba(17,17,17,0.95)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid #1e1e1e',
-            borderRadius: 16,
-            padding: '32px',
-          }}>
-            <p style={{ color: '#666', fontSize: 13, textAlign: 'center', marginBottom: 24, marginTop: 0 }}>
-              Acceso exclusivo para talleres registrados
-            </p>
-
-            <form onSubmit={handleSubmit}>
-              <div style={{ marginBottom: 16 }}>
-                <label htmlFor="email" style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Email
-                </label>
-                <input id="email" name="email" type="email" value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="taller@email.com"
-                  autoComplete="email" style={inputStyle} />
-              </div>
-
-              <div style={{ marginBottom: 24 }}>
-                <label htmlFor="password" style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Contraseña
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input id="password" name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password} onChange={e => setPassword(e.target.value)}
-                    placeholder="Mínimo 8 caracteres"
-                    autoComplete="current-password"
-                    style={{ ...inputStyle, paddingRight: 48 }} />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)}
-                    style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: 0 }}>
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>
-                  {error}
-                </div>
-              )}
-
-              <button type="submit" disabled={loading} style={{
-                width: '100%', padding: '14px', borderRadius: 10, border: 'none',
-                background: loading ? '#1a1a1a' : '#e85d04',
-                color: loading ? '#444' : '#fff',
-                fontSize: 15, fontWeight: 600,
-                fontFamily: "'DM Sans', sans-serif",
-                cursor: loading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              }}>
-                {loading
-                  ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Procesando...</>
-                  : 'Entrar al panel'
-                }
-              </button>
-            </form>
-          </div>
-
-          {/* Link discreto a cotizadora */}
-          <p style={{ textAlign: 'center', marginTop: 20, fontSize: 12, color: '#444' }}>
-            ¿Sos cliente?{' '}
-            <a href="https://fabriq-kappa.vercel.app/" style={{ color: '#666', textDecoration: 'underline' }}>
-              Cotizá tu pedido acá
-            </a>
-          </p>
+        {/* Lista de órdenes */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>Órdenes recibidas</h2>
+          <button onClick={loadOrders} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
+            <RefreshCw size={14} /> Actualizar
+          </button>
         </div>
-      </main>
-    </>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <Loader2 size={32} color="#e85d04" style={{ animation: 'spin 1s linear infinite' }} />
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : orders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#444' }}>
+            <Clock size={40} style={{ marginBottom: 16 }} />
+            <p>Todavía no hay órdenes. Compartí tu QR con tus clientes.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {orders.map(order => (
+              <div key={order.id} onClick={() => setSelected(selected?.id === order.id ? null : order)}
+                style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#444' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
+                    <span style={{ fontSize: 14 }}>{order.customer_email}</span>
+                    <span style={{ fontSize: 12, color: '#666', background: '#1a1a1a', padding: '2px 8px', borderRadius: 20 }}>{SERVICE_LABELS[order.service_type] || order.service_type}</span>
+                    {order.ai_analysis?.copyright_alert && <AlertTriangle size={14} color="#f59e0b" />}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
+                    <span style={{ fontSize: 12, color: STATUS_LABELS[order.status]?.color || '#888' }}>{STATUS_LABELS[order.status]?.label || order.status}</span>
+                    <span style={{ fontSize: 12, color: '#444' }}>{new Date(order.created_at).toLocaleDateString('es-AR')}</span>
+                  </div>
+                </div>
+
+                {selected?.id === order.id && (
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1e1e1e' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                      <div>
+                        <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Archivo</p>
+                        <p style={{ fontSize: 13, margin: 0 }}>{order.file_name}</p>
+                      </div>
+                      <div>
+                        <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Notas del cliente</p>
+                        <p style={{ fontSize: 13, margin: 0, color: order.notes ? '#f0ece3' : '#444' }}>{order.notes || 'Sin notas'}</p>
+                      </div>
+                      {order.ai_analysis?.estimated_time && (
+                        <div>
+                          <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Tiempo estimado</p>
+                          <p style={{ fontSize: 13, margin: 0 }}>{order.ai_analysis.estimated_time}</p>
+                        </div>
+                      )}
+                      {order.ai_analysis?.price_breakdown?.description && (
+                        <div>
+                          <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Detalle del precio</p>
+                          <p style={{ fontSize: 13, margin: 0 }}>{order.ai_analysis.price_breakdown.description}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {order.file_url && (
+                      <a href={order.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#e85d04', fontSize: 13, textDecoration: 'none', display: 'inline-block', marginBottom: 16 }}>
+                        Ver archivo del cliente →
+                      </a>
+                    )}
+
+                    <div>
+                      <p style={{ color: '#666', fontSize: 12, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cambiar estado</p>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {Object.entries(STATUS_LABELS).map(([key, val]) => (
+                          <button key={key} type="button"
+                            onClick={e => { e.stopPropagation(); updateStatus(order.id, key) }}
+                            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: order.status === key ? '#1e1e1e' : 'transparent', color: order.status === key ? val.color : '#555', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: order.status === key ? `1px solid ${val.color}` : '1px solid #2a2a2a' }}>
+                            {order.status === key && <CheckCircle size={10} style={{ marginRight: 4, display: 'inline' }} />}
+                            {val.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+    </main>
   )
 }
