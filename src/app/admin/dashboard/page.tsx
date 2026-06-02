@@ -1,11 +1,13 @@
 'use client'
 // src/app/admin/dashboard/page.tsx
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy } from 'lucide-react'
+import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff } from 'lucide-react'
 import QRCode from 'qrcode'
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls, useGLTF, Environment } from '@react-three/drei'
 
 type Order = {
   id: string
@@ -17,6 +19,9 @@ type Order = {
   price_ars: number
   status: string
   notes: string
+  stl_ia_url?: string
+  stl_taller_url?: string
+  status_3d?: string
   ai_analysis: {
     viable: boolean
     copyright_alert: boolean
@@ -43,6 +48,32 @@ const SERVICE_LABELS: Record<string, string> = {
   dtf: 'DTF', '3d': '3D', sublimacion: 'Sublimación'
 }
 
+function Model3D({ url, wireframe }: { url: string; wireframe: boolean }) {
+  const { scene } = useGLTF(url)
+  scene.traverse((child: any) => {
+    if (child.isMesh) {
+      child.material.wireframe = wireframe
+    }
+  })
+  return <primitive object={scene} scale={2} />
+}
+
+function Visor3D({ modelUrl, wireframe }: { modelUrl: string; wireframe: boolean }) {
+  return (
+    <div style={{ width: '100%', height: 300, background: '#0a0a0a', borderRadius: 10, border: '1px solid #2a2a2a', overflow: 'hidden' }}>
+      <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
+        <ambientLight intensity={0.7} />
+        <directionalLight position={[10, 10, 5]} intensity={1} />
+        <Suspense fallback={null}>
+          <Model3D url={modelUrl} wireframe={wireframe} />
+        </Suspense>
+        <OrbitControls enablePan={true} enableZoom={true} />
+        <Environment preset="studio" />
+      </Canvas>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
@@ -53,11 +84,11 @@ export default function Dashboard() {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [showQr, setShowQr] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [generating3d, setGenerating3d] = useState<string | null>(null)
+  const [wireframe, setWireframe] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  useEffect(() => {
-    checkAuth()
-  }, [])
+  useEffect(() => { checkAuth() }, [])
 
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -76,11 +107,9 @@ export default function Dashboard() {
 
     if (data) {
       setShopConfig(data)
-      // Generar QR con la URL del taller
       const tallerUrl = `${window.location.origin}/?taller=${data.codigo_taller}`
       const qrUrl = await QRCode.toDataURL(tallerUrl, {
-        width: 300,
-        margin: 2,
+        width: 300, margin: 2,
         color: { dark: '#f0ece3', light: '#111111' }
       })
       setQrDataUrl(qrUrl)
@@ -101,6 +130,38 @@ export default function Dashboard() {
     await supabase.from('orders').update({ status }).eq('id', orderId)
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o))
     if (selected?.id === orderId) setSelected(prev => prev ? { ...prev, status } : null)
+  }
+
+  async function handleGenerate3D(order: Order) {
+    if (!order.file_url) return
+    setGenerating3d(order.id)
+
+    try {
+      const response = await fetch('/api/generate-3d', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: order.file_url, orderId: order.id })
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.modelUrl) {
+        setOrders(prev => prev.map(o =>
+          o.id === order.id
+            ? { ...o, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' }
+            : o
+        ))
+        if (selected?.id === order.id) {
+          setSelected(prev => prev ? { ...prev, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' } : null)
+        }
+      } else {
+        alert(`Error: ${data.error || 'No se pudo generar el modelo 3D'}`)
+      }
+    } catch (err) {
+      alert('Error de conexión al generar el modelo 3D')
+    } finally {
+      setGenerating3d(null)
+    }
   }
 
   async function handleLogout() {
@@ -124,11 +185,20 @@ export default function Dashboard() {
     a.click()
   }
 
+  function downloadModel(url: string, orderId: string) {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `modelo-3d-${orderId.slice(0, 8)}.glb`
+    a.click()
+  }
+
   const totalRevenue = orders
     .filter(o => o.status === 'done')
     .reduce((sum, o) => sum + (o.price_ars || 0), 0)
 
-  const tallerUrl = shopConfig ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?taller=${shopConfig.codigo_taller}` : ''
+  const tallerUrl = shopConfig
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?taller=${shopConfig.codigo_taller}`
+    : ''
 
   return (
     <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
@@ -165,19 +235,11 @@ export default function Dashboard() {
         {/* Panel QR */}
         {showQr && shopConfig && (
           <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 16, padding: 32, marginBottom: 32, display: 'flex', gap: 32, alignItems: 'center' }}>
-            {qrDataUrl && (
-              <img src={qrDataUrl} alt="QR del taller" style={{ width: 160, height: 160, borderRadius: 12 }} />
-            )}
+            {qrDataUrl && <img src={qrDataUrl} alt="QR del taller" style={{ width: 160, height: 160, borderRadius: 12 }} />}
             <div style={{ flex: 1 }}>
-              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>
-                Código de tu taller
-              </p>
-              <p style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px', fontFamily: "'DM Mono', monospace", color: '#e85d04', letterSpacing: 4 }}>
-                {shopConfig.codigo_taller}
-              </p>
-              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px', lineHeight: 1.5 }}>
-                Compartí este QR o link con tus clientes. Al escanearlo, van directo a tu cotizadora y sus pedidos quedan asignados a tu taller.
-              </p>
+              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Código de tu taller</p>
+              <p style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px', fontFamily: "'DM Mono', monospace", color: '#e85d04', letterSpacing: 4 }}>{shopConfig.codigo_taller}</p>
+              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px', lineHeight: 1.5 }}>Compartí este QR o link con tus clientes. Al escanearlo, van directo a tu cotizadora.</p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={copyLink} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: copied ? 'rgba(74,222,128,0.1)' : 'transparent', color: copied ? '#4ade80' : '#888', cursor: 'pointer', fontSize: 13, fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Copy size={13} /> {copied ? '¡Copiado!' : 'Copiar link'}
@@ -186,9 +248,7 @@ export default function Dashboard() {
                   <Download size={13} /> Descargar QR
                 </button>
               </div>
-              <p style={{ color: '#333', fontSize: 11, marginTop: 12, fontFamily: "'DM Mono', monospace", wordBreak: 'break-all' }}>
-                {tallerUrl}
-              </p>
+              <p style={{ color: '#333', fontSize: 11, marginTop: 12, fontFamily: "'DM Mono', monospace", wordBreak: 'break-all' }}>{tallerUrl}</p>
             </div>
           </div>
         )}
@@ -237,6 +297,9 @@ export default function Dashboard() {
                     <span style={{ fontSize: 14 }}>{order.customer_email}</span>
                     <span style={{ fontSize: 12, color: '#666', background: '#1a1a1a', padding: '2px 8px', borderRadius: 20 }}>{SERVICE_LABELS[order.service_type] || order.service_type}</span>
                     {order.ai_analysis?.copyright_alert && <AlertTriangle size={14} color="#f59e0b" />}
+                    {order.service_type === '3d' && order.status_3d === 'ready' && (
+                      <span style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: 20 }}>3D listo</span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
@@ -272,10 +335,64 @@ export default function Dashboard() {
 
                     {order.file_url && (
                       <a href={order.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#e85d04', fontSize: 13, textDecoration: 'none', display: 'inline-block', marginBottom: 16 }}>
-                        Ver archivo del cliente →
+                        Ver imagen del cliente →
                       </a>
                     )}
 
+                    {/* Botón generar 3D */}
+                    {order.service_type === '3d' && !order.stl_ia_url && (
+                      <div style={{ marginBottom: 16 }}>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleGenerate3D(order) }}
+                          disabled={generating3d === order.id}
+                          style={{
+                            padding: '10px 18px', borderRadius: 8, border: 'none',
+                            background: generating3d === order.id ? '#1a1a1a' : 'linear-gradient(135deg, #e85d04, #f48c06)',
+                            color: generating3d === order.id ? '#444' : '#fff',
+                            fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                            cursor: generating3d === order.id ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 8,
+                          }}
+                        >
+                          {generating3d === order.id
+                            ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D... (30-60 seg)</>
+                            : <><Cpu size={14} /> Generar modelo 3D con IA</>
+                          }
+                        </button>
+                        <p style={{ color: '#555', fontSize: 11, marginTop: 6 }}>
+                          Convierte la imagen del cliente en un modelo 3D listo para imprimir
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Visor 3D */}
+                    {order.stl_taller_url && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Modelo 3D generado
+                          </p>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); setWireframe(!wireframe) }}
+                              style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #2a2a2a', background: wireframe ? 'rgba(232,93,4,0.1)' : 'transparent', color: wireframe ? '#e85d04' : '#888', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              {wireframe ? <EyeOff size={12} /> : <Eye size={12} />}
+                              {wireframe ? 'Sólido' : 'Wireframe'}
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); downloadModel(order.stl_taller_url!, order.id) }}
+                              style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#e85d04', color: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Download size={12} /> Descargar GLB
+                            </button>
+                          </div>
+                        </div>
+                        <Visor3D modelUrl={order.stl_taller_url} wireframe={wireframe} />
+                      </div>
+                    )}
+
+                    {/* Cambiar estado */}
                     <div>
                       <p style={{ color: '#666', fontSize: 12, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cambiar estado</p>
                       <div style={{ display: 'flex', gap: 8 }}>
