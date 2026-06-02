@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       'firtoz/trellis:e8f6c45206993f297372f5436b90350817bd9b4a0d52d2a76df50c1c8afa2b3c',
       {
         input: {
-          image: imageUrl,
+          images: [imageUrl],
           texture_size: 1024,
           mesh_simplify: 0.95,
           generate_model: true,
