@@ -289,7 +289,7 @@ export default function Dashboard() {
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
             {orders.map(order => (
-              <div key={order.id} onClick={() => setSelected(selected?.id === order.id ? null : order)}
+              <div key={order.id} onClick={(e) => { if ((e.target as HTMLElement).closest('canvas')) return; setSelected(selected?.id === order.id ? null : order) }}
                 style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
