@@ -289,7 +289,11 @@ export default function Dashboard() {
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
             {orders.map(order => (
-              <div key={order.id} onClick={(e) => { if ((e.target as HTMLElement).closest('canvas')) return; setSelected(selected?.id === order.id ? null : order) }}
+              <div key={order.id} onClick={(e) => {
+                const target = e.target as HTMLElement
+                if (target.closest('canvas') || target.tagName === 'CANVAS' || target.closest('button')) return
+                setSelected(selected?.id === order.id ? null : order)
+              }}
                 style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -367,7 +371,7 @@ export default function Dashboard() {
 
                     {/* Visor 3D */}
                     {order.stl_taller_url && (
-                        <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
+                      <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                           <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             Modelo 3D generado
