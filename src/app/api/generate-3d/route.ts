@@ -45,8 +45,10 @@ export async function POST(req: NextRequest) {
     ) as Record<string, unknown>
 
    // Extraer URL del modelo GLB del output
-const outputObj = output as { model_file?: string }
-const modelUrl = outputObj?.model_file || null
+   const outputObj = output as { model_file?: string }
+   const modelUrl = typeof outputObj?.model_file === 'string' 
+     ? outputObj.model_file 
+     : null
 
 if (!modelUrl) {
   console.error('Output de Replicate:', JSON.stringify(output))
