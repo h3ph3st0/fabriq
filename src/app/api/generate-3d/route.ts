@@ -29,23 +29,34 @@ export async function POST(req: NextRequest) {
       .update({ status: 'processing_3d', status_3d: 'processing' })
       .eq('id', orderId)
 
-    // 2. Ejecutar modelo TripoSR en Replicate (imagen → 3D)
+    // 2. Ejecutar modelo firtoz/trellis en Replicate
     const output = await replicate.run(
-      'stability-ai/triposr:884d4bb11f2dc48a16d98f7a6cf5e72e3ae1c6bbe1a99c5a1abf9ce4e9f6e0e5',
+      'firtoz/trellis',
       {
         input: {
           image: imageUrl,
-          do_remove_background: true,
-          foreground_ratio: 0.85,
+          texture_size: 1024,
+          mesh_simplify: 0.95,
+          generate_model: true,
+          save_gaussian: false,
+          save_video: false,
         }
       }
-    ) as string[]
+    ) as Record<string, unknown>
 
-    if (!output || output.length === 0) {
-      throw new Error('No se generó ningún modelo 3D')
+    // Extraer URL del modelo GLB del output
+    const modelUrl = (
+      output?.model_file ||
+      output?.glb ||
+      output?.mesh ||
+      (Array.isArray(output) ? output[0] : null) ||
+      Object.values(output).find(v => typeof v === 'string' && (v as string).includes('.glb'))
+    ) as string | null
+
+    if (!modelUrl) {
+      console.error('Output de Replicate:', JSON.stringify(output))
+      throw new Error('No se pudo obtener la URL del modelo 3D del output')
     }
-
-    const modelUrl = output[0]
 
     // 3. Guardar URL del modelo en la orden
     await supabase
