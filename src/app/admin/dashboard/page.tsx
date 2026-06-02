@@ -367,7 +367,7 @@ export default function Dashboard() {
 
                     {/* Visor 3D */}
                     {order.stl_taller_url && (
-                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                           <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             Modelo 3D generado
