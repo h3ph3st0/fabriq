@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Ejecutar modelo firtoz/trellis en Replicate
     const output = await replicate.run(
-      'firtoz/trellis:latest',
+      'firtoz/trellis:e8f6c45206993f297372f5436b90350817bd9b4a0d52d2a76df50c1c8afa2b3c',
       {
         input: {
           image: imageUrl,
