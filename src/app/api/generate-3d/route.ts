@@ -44,19 +44,14 @@ export async function POST(req: NextRequest) {
       }
     ) as Record<string, unknown>
 
-    // Extraer URL del modelo GLB del output
-    const modelUrl = (
-      output?.model_file ||
-      output?.glb ||
-      output?.mesh ||
-      (Array.isArray(output) ? output[0] : null) ||
-      Object.values(output).find(v => typeof v === 'string' && (v as string).includes('.glb'))
-    ) as string | null
+   // Extraer URL del modelo GLB del output
+const outputObj = output as { model_file?: string }
+const modelUrl = outputObj?.model_file || null
 
-    if (!modelUrl) {
-      console.error('Output de Replicate:', JSON.stringify(output))
-      throw new Error('No se pudo obtener la URL del modelo 3D del output')
-    }
+if (!modelUrl) {
+  console.error('Output de Replicate:', JSON.stringify(output))
+  throw new Error('No se pudo obtener la URL del modelo 3D del output')
+}
 
     // 3. Guardar URL del modelo en la orden
     await supabase
