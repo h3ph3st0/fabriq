@@ -60,8 +60,8 @@ function Model3D({ url, wireframe }: { url: string; wireframe: boolean }) {
 
 function Visor3D({ modelUrl, wireframe }: { modelUrl: string; wireframe: boolean }) {
   return (
-    <div style={{ width: '100%', height: 300, background: '#0a0a0a', borderRadius: 10, border: '1px solid #2a2a2a', overflow: 'hidden' }}>
-      <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
+    <div style={{ width: '100%', maxWidth: '100%', height: 300, background: '#0a0a0a', borderRadius: 10, border: '1px solid #2a2a2a', overflow: 'hidden', position: 'relative', contain: 'strict' }}>
+      <Canvas camera={{ position: [0, 0, 5], fov: 45 }} style={{ width: '100%', height: '100%', display: 'block' }}>
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 10, 5]} intensity={1} />
         <Suspense fallback={null}>
