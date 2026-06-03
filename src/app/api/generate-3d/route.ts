@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
       .eq('id', orderId)
 
     // 2. Ejecutar modelo firtoz/trellis en Replicate
+    // replicate.run() devuelve directamente el output del modelo
     const output = await replicate.run(
       'firtoz/trellis:e8f6c45206993f297372f5436b90350817bd9b4a0d52d2a76df50c1c8afa2b3c',
       {
@@ -42,20 +43,38 @@ export async function POST(req: NextRequest) {
           save_video: false,
         }
       }
-    ) as Record<string, unknown>
+    )
 
-   // Extraer URL del modelo GLB del output
-   const outputObj = output as { model_file?: string }
-   const modelUrl = typeof outputObj?.model_file === 'string' 
-     ? outputObj.model_file 
-     : null
+    // 3. Log del output para debug
+    console.log('Output de Replicate:', JSON.stringify(output))
 
-if (!modelUrl) {
-  console.error('Output de Replicate:', JSON.stringify(output))
-  throw new Error('No se pudo obtener la URL del modelo 3D del output')
-}
+    // 4. Extraer model_file del output
+    // firtoz/trellis devuelve: { model_file: "url", color_video: "url", ... }
+    let modelUrl: string | null = null
 
-    // 3. Guardar URL del modelo en la orden
+    if (output && typeof output === 'object') {
+      const out = output as Record<string, unknown>
+      if (typeof out.model_file === 'string') {
+        modelUrl = out.model_file
+      } else if (Array.isArray(output) && typeof output[0] === 'string') {
+        modelUrl = output[0]
+      }
+    }
+
+    if (!modelUrl) {
+      console.error('No se encontró model_file en:', JSON.stringify(output))
+      // Actualizar orden como fallida
+      await supabase
+        .from('orders')
+        .update({ status_3d: 'failed' })
+        .eq('id', orderId)
+      return NextResponse.json(
+        { error: 'No se pudo obtener la URL del modelo 3D' },
+        { status: 500 }
+      )
+    }
+
+    // 5. Guardar URL del modelo en la orden
     await supabase
       .from('orders')
       .update({
@@ -75,7 +94,6 @@ if (!modelUrl) {
   } catch (error: unknown) {
     console.error('Error en generate-3d:', error)
     const err = error as { message?: string }
-
     return NextResponse.json(
       { error: err?.message || 'Error interno del servidor' },
       { status: 500 }
