@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff } from 'lucide-react'
+import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X } from 'lucide-react'
 import QRCode from 'qrcode'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useGLTF, Environment } from '@react-three/drei'
@@ -51,9 +51,7 @@ const SERVICE_LABELS: Record<string, string> = {
 function Model3D({ url, wireframe }: { url: string; wireframe: boolean }) {
   const { scene } = useGLTF(url)
   scene.traverse((child: any) => {
-    if (child.isMesh) {
-      child.material.wireframe = wireframe
-    }
+    if (child.isMesh) child.material.wireframe = wireframe
   })
   return <primitive object={scene} scale={2} />
 }
@@ -86,6 +84,9 @@ export default function Dashboard() {
   const [copied, setCopied] = useState(false)
   const [generating3d, setGenerating3d] = useState<string | null>(null)
   const [wireframe, setWireframe] = useState(false)
+  const [extraImages, setExtraImages] = useState<Record<string, string[]>>({})
+  const [uploadingImage, setUploadingImage] = useState<string | null>(null)
+  const [deletingOrder, setDeletingOrder] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => { checkAuth() }, [])
@@ -132,19 +133,59 @@ export default function Dashboard() {
     if (selected?.id === orderId) setSelected(prev => prev ? { ...prev, status } : null)
   }
 
+  async function handleDeleteOrder(orderId: string) {
+    if (!confirm('¿Estás seguro de que querés eliminar este pedido? Esta acción no se puede deshacer.')) return
+    setDeletingOrder(orderId)
+    const { error } = await supabase.from('orders').delete().eq('id', orderId)
+    if (!error) {
+      setOrders(prev => prev.filter(o => o.id !== orderId))
+      if (selected?.id === orderId) setSelected(null)
+    }
+    setDeletingOrder(null)
+  }
+
+  async function handleUploadExtraImage(orderId: string, file: File) {
+    setUploadingImage(orderId)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `extra-${orderId}-${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage
+        .from('uploads')
+        .upload(fileName, file)
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
+      setExtraImages(prev => ({
+        ...prev,
+        [orderId]: [...(prev[orderId] || []), urlData.publicUrl]
+      }))
+    } catch (err) {
+      alert('Error al subir la imagen')
+    } finally {
+      setUploadingImage(null)
+    }
+  }
+
+  function removeExtraImage(orderId: string, index: number) {
+    setExtraImages(prev => ({
+      ...prev,
+      [orderId]: prev[orderId].filter((_, i) => i !== index)
+    }))
+  }
+
   async function handleGenerate3D(order: Order) {
     if (!order.file_url) return
     setGenerating3d(order.id)
 
     try {
+      const allImages = [order.file_url, ...(extraImages[order.id] || [])]
       const response = await fetch('/api/generate-3d', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: order.file_url, orderId: order.id })
+        body: JSON.stringify({ imageUrl: order.file_url, extraImages: extraImages[order.id] || [], orderId: order.id, allImages })
       })
 
       const data = await response.json()
-
       if (data.success && data.modelUrl) {
         setOrders(prev => prev.map(o =>
           o.id === order.id
@@ -289,12 +330,14 @@ export default function Dashboard() {
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
             {orders.map(order => (
-              <div key={order.id} onClick={(e) => {
-                const target = e.target as HTMLElement
-                if (target.closest('canvas') || target.tagName === 'CANVAS' || target.closest('button')) return
-                setSelected(selected?.id === order.id ? null : order)
-              }}
+              <div key={order.id}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest('canvas') || target.tagName === 'CANVAS' || target.closest('button') || target.closest('input')) return
+                  setSelected(selected?.id === order.id ? null : order)
+                }}
                 style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#444' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
@@ -309,6 +352,17 @@ export default function Dashboard() {
                     <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
                     <span style={{ fontSize: 12, color: STATUS_LABELS[order.status]?.color || '#888' }}>{STATUS_LABELS[order.status]?.label || order.status}</span>
                     <span style={{ fontSize: 12, color: '#444' }}>{new Date(order.created_at).toLocaleDateString('es-AR')}</span>
+                    {/* Botón eliminar */}
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDeleteOrder(order.id) }}
+                      disabled={deletingOrder === order.id}
+                      style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '4px 8px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}
+                    >
+                      {deletingOrder === order.id
+                        ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                        : <Trash2 size={11} />
+                      }
+                    </button>
                   </div>
                 </div>
 
@@ -343,11 +397,52 @@ export default function Dashboard() {
                       </a>
                     )}
 
+                    {/* Panel de imágenes adicionales para 3D */}
+                    {order.service_type === '3d' && !order.stl_ia_url && (
+                      <div style={{ marginBottom: 16, padding: 16, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10 }} onClick={e => e.stopPropagation()}>
+                        <p style={{ color: '#3b82f6', fontSize: 12, fontWeight: 500, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Imágenes de referencia adicionales
+                        </p>
+                        <p style={{ color: '#555', fontSize: 11, margin: '0 0 12px', lineHeight: 1.5 }}>
+                          Agregá hasta 5 fotos del objeto desde distintos ángulos para mejorar la calidad del modelo 3D generado.
+                        </p>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                          {(extraImages[order.id] || []).map((url, i) => (
+                            <div key={i} style={{ position: 'relative', width: 64, height: 64 }}>
+                              <img src={url} alt={`extra-${i}`} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid #2a2a2a' }} />
+                              <button
+                                onClick={() => removeExtraImage(order.id, i)}
+                                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
+                          ))}
+                          {(extraImages[order.id] || []).length < 5 && (
+                            <label style={{ width: 64, height: 64, borderRadius: 6, border: '1px dashed #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#111' }}>
+                              {uploadingImage === order.id
+                                ? <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
+                                : <Plus size={16} color="#666" />
+                              }
+                              <input type="file" accept="image/*" style={{ display: 'none' }}
+                                onChange={e => { if (e.target.files?.[0]) handleUploadExtraImage(order.id, e.target.files[0]) }}
+                              />
+                            </label>
+                          )}
+                        </div>
+                        {(extraImages[order.id] || []).length > 0 && (
+                          <p style={{ color: '#3b82f6', fontSize: 11, margin: 0 }}>
+                            ✓ {(extraImages[order.id] || []).length} imagen/es adicional/es agregada/s
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Botón generar 3D */}
                     {order.service_type === '3d' && !order.stl_ia_url && (
-                      <div style={{ marginBottom: 16 }}>
+                      <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
                         <button
-                          onClick={e => { e.stopPropagation(); handleGenerate3D(order) }}
+                          onClick={() => handleGenerate3D(order)}
                           disabled={generating3d === order.id}
                           style={{
                             padding: '10px 18px', borderRadius: 8, border: 'none',
@@ -359,13 +454,10 @@ export default function Dashboard() {
                           }}
                         >
                           {generating3d === order.id
-                            ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D... (30-60 seg)</>
-                            : <><Cpu size={14} /> Generar modelo 3D con IA</>
+                            ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D... (20-30 seg)</>
+                            : <><Cpu size={14} /> Generar modelo 3D con IA {(extraImages[order.id] || []).length > 0 ? `(${1 + (extraImages[order.id] || []).length} imágenes)` : ''}</>
                           }
                         </button>
-                        <p style={{ color: '#555', fontSize: 11, marginTop: 6 }}>
-                          Convierte la imagen del cliente en un modelo 3D listo para imprimir
-                        </p>
                       </div>
                     )}
 
@@ -373,21 +465,13 @@ export default function Dashboard() {
                     {order.stl_taller_url && (
                       <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Modelo 3D generado
-                          </p>
+                          <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Modelo 3D generado</p>
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button
-                              onClick={e => { e.stopPropagation(); setWireframe(!wireframe) }}
-                              style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #2a2a2a', background: wireframe ? 'rgba(232,93,4,0.1)' : 'transparent', color: wireframe ? '#e85d04' : '#888', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}
-                            >
+                            <button onClick={() => setWireframe(!wireframe)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #2a2a2a', background: wireframe ? 'rgba(232,93,4,0.1)' : 'transparent', color: wireframe ? '#e85d04' : '#888', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
                               {wireframe ? <EyeOff size={12} /> : <Eye size={12} />}
                               {wireframe ? 'Sólido' : 'Wireframe'}
                             </button>
-                            <button
-                              onClick={e => { e.stopPropagation(); downloadModel(order.stl_taller_url!, order.id) }}
-                              style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#e85d04', color: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}
-                            >
+                            <button onClick={() => downloadModel(order.stl_taller_url!, order.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#e85d04', color: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
                               <Download size={12} /> Descargar GLB
                             </button>
                           </div>
