@@ -6,7 +6,7 @@ import { analyzeFileWithGemini, GeminiAnalysis } from '@/lib/gemini'
 import { Upload, CheckCircle, XCircle, AlertTriangle, Loader2, ChevronRight, Box } from 'lucide-react'
 
 type ServiceType = 'dtf' | '3d' | 'sublimacion'
-type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'done'
+type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'fotos3d' | 'done'
 
 const SERVICE_LABELS: Record<ServiceType, string> = {
   dtf: 'DTF — Remeras y telas',
@@ -50,6 +50,8 @@ export default function Home() {
   const [cantidad, setCantidad] = useState('1')
   const [submitting, setSubmitting] = useState(false)
   const [orderId, setOrderId] = useState<string | null>(null)
+  const [fotos3d, setFotos3d] = useState<string[]>([])
+  const [uploadingFoto, setUploadingFoto] = useState(false)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const f = acceptedFiles[0]
@@ -109,15 +111,41 @@ export default function Home() {
         notes: `Alto: ${altura || 'no especificado'}cm | Ancho: ${ancho || 'no especificado'}cm | Cantidad: ${cantidad} | ${notes}`,
       }).select().single()
       if (orderError) throw orderError
-      setOrderId(order.id); setStep('done')
+      setOrderId(order.id)
+      if (serviceType === '3d') {
+        setStep('fotos3d')
+      } else {
+        setStep('done')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el pedido')
     } finally { setSubmitting(false) }
   }
 
+  async function handleUploadFoto3d(file: File) {
+    if (!orderId) return
+    setUploadingFoto(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `ref-${orderId}-${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('uploads').upload(fileName, file)
+      if (uploadError) throw uploadError
+      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
+      await supabase.from('order_reference_images').insert({
+        order_id: orderId,
+        image_url: urlData.publicUrl,
+        uploaded_by: 'cliente'
+      })
+      setFotos3d(prev => [...prev, urlData.publicUrl])
+    } catch (err) {
+      console.error(err)
+    } finally { setUploadingFoto(false) }
+  }
+
   function reset() {
     setStep('upload'); setFile(null); setPreview(null); setAnalysis(null)
-    setError(null); setEmail(''); setNotes(''); setAltura(''); setAncho(''); setCantidad('1'); setOrderId(null)
+    setError(null); setEmail(''); setNotes(''); setAltura(''); setAncho('')
+    setCantidad('1'); setOrderId(null); setFotos3d([])
   }
 
   return (
@@ -126,14 +154,14 @@ export default function Home() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
       <main style={{
-  minHeight: '100vh',
-  background: '#0a0a0a',
-  backgroundImage: 'url(/fondo.png)',
-  backgroundSize: '350px',
-  backgroundRepeat: 'repeat',
-  color: '#f0ece3',
-  fontFamily: "'DM Sans', sans-serif",
-}}>
+        minHeight: '100vh',
+        background: '#0a0a0a',
+        backgroundImage: 'url(/fondo.png)',
+        backgroundSize: '350px',
+        backgroundRepeat: 'repeat',
+        color: '#f0ece3',
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
         {/* Header */}
         <header style={{ borderBottom: '1px solid #1e1e1e', padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(8px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -143,26 +171,14 @@ export default function Home() {
             <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px' }}>FabriQ</span>
             <span style={{ marginLeft: 4, fontSize: 11, background: '#1e1e1e', color: '#888', padding: '2px 8px', borderRadius: 20, fontFamily: "'DM Mono', monospace" }}>beta</span>
           </div>
-          {/* Link discreto para talleres */}
-          <a href="/admin" style={{
-  fontSize: 12,
-  color: '#e85d04',
-  textDecoration: 'none',
-  border: '1px solid rgba(232,93,4,0.3)',
-  borderRadius: 8,
-  padding: '7px 14px',
-  background: 'rgba(232,93,4,0.05)',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-}}>
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
-  Panel de talleres
-</a>
+          <a href="/admin" style={{ fontSize: 12, color: '#e85d04', textDecoration: 'none', border: '1px solid rgba(232,93,4,0.3)', borderRadius: 8, padding: '7px 14px', background: 'rgba(232,93,4,0.05)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            Panel de talleres
+          </a>
         </header>
 
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '60px 24px' }}>
 
+          {/* PASO: UPLOAD */}
           {step === 'upload' && (
             <div>
               <h1 style={{ fontSize: 36, fontWeight: 300, letterSpacing: '-1px', lineHeight: 1.2, marginBottom: 8 }}>
@@ -173,7 +189,6 @@ export default function Home() {
                 Subí tu diseño, la IA analiza viabilidad técnica y genera el precio al instante.
               </p>
 
-              {/* Selector de servicio */}
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>Tipo de servicio</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -192,7 +207,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Medidas */}
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>Medidas del producto final</label>
                 <div style={{ display: 'flex', gap: 12 }}>
@@ -209,7 +223,6 @@ export default function Home() {
                 <p style={{ color: '#444', fontSize: 11, marginTop: 6 }}>Las medidas permiten calcular el precio con mayor precisión</p>
               </div>
 
-              {/* Dropzone */}
               <div {...getRootProps()} style={{
                 border: `2px dashed ${isDragActive ? '#e85d04' : file ? '#2a6b2a' : '#2a2a2a'}`,
                 borderRadius: 16, padding: '48px 24px', textAlign: 'center', cursor: 'pointer',
@@ -248,6 +261,7 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: ANALIZANDO */}
           {step === 'analyzing' && (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
               <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
@@ -256,6 +270,7 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: RESULTADO */}
           {step === 'result' && analysis && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
@@ -331,6 +346,7 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: FORMULARIO */}
           {step === 'form' && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 400, marginBottom: 8 }}>Confirmar pedido</h2>
@@ -360,12 +376,69 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: FOTOS 3D */}
+          {step === 'fotos3d' && (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <div style={{
+                width: 64, height: 64,
+                background: 'rgba(59,130,246,0.1)',
+                borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 20px',
+                border: '1px solid rgba(59,130,246,0.2)',
+              }}>
+                <Box size={28} color="#3b82f6" />
+              </div>
+              <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>¡Pedido recibido!</h2>
+              <p style={{ color: '#888', fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>
+                Para mejorar la calidad del modelo 3D podés agregar hasta 5 fotos adicionales del objeto desde distintos ángulos.
+              </p>
+              <p style={{ color: '#555', fontSize: 12, marginBottom: 32 }}>Esto es opcional pero mejora mucho el resultado final.</p>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 24 }}>
+                {fotos3d.map((url, i) => (
+                  <img key={i} src={url} alt={`ref-${i}`} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #2a2a2a' }} />
+                ))}
+                {fotos3d.length < 5 && (
+                  <label style={{
+                    width: 80, height: 80, borderRadius: 8,
+                    border: '2px dashed #2a2a2a',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', background: '#111', gap: 4
+                  }}>
+                    {uploadingFoto
+                      ? <Loader2 size={20} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
+                      : <><Upload size={20} color="#666" /><span style={{ color: '#666', fontSize: 10 }}>Agregar</span></>
+                    }
+                    <input type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => { if (e.target.files?.[0]) handleUploadFoto3d(e.target.files[0]) }}
+                    />
+                  </label>
+                )}
+              </div>
+
+              <p style={{ color: '#555', fontSize: 12, marginBottom: 24 }}>
+                {fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}
+              </p>
+
+              <button onClick={() => setStep('done')} style={{
+                padding: '14px 32px', borderRadius: 10, border: 'none',
+                background: '#e85d04', color: '#fff',
+                fontSize: 14, fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+              }}>
+                {fotos3d.length > 0 ? 'Listo, enviar fotos →' : 'Continuar sin fotos adicionales →'}
+              </button>
+            </div>
+          )}
+
+          {/* PASO: CONFIRMACIÓN */}
           {step === 'done' && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
               <div style={{ width: 72, height: 72, background: 'rgba(74,222,128,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
                 <CheckCircle size={36} color="#4ade80" />
               </div>
-              <h2 style={{ fontSize: 26, fontWeight: 400, marginBottom: 8 }}>¡Pedido recibido!</h2>
+              <h2 style={{ fontSize: 26, fontWeight: 400, marginBottom: 8 }}>¡Todo listo!</h2>
               <p style={{ color: '#666', fontSize: 14, marginBottom: 8 }}>
                 Te contactaremos a <strong style={{ color: '#888' }}>{email}</strong> para coordinar el pago.
               </p>
@@ -377,7 +450,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Footer con acceso discreto a talleres */}
         <footer style={{ borderTop: '1px solid #1a1a1a', padding: '20px 40px', textAlign: 'center', background: 'rgba(10,10,10,0.8)' }}>
           <p style={{ color: '#333', fontSize: 11, margin: 0 }}>
             FabriQ · Plataforma de manufactura on-demand ·{' '}
