@@ -14,7 +14,7 @@ const replicate = new Replicate({
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageUrl, orderId } = await req.json()
+    const { imageUrl, extraImages, orderId } = await req.json()
 
     if (!imageUrl || !orderId) {
       return NextResponse.json(
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       'firtoz/trellis:e8f6c45206993f297372f5436b90350817bd9b4a0d52d2a76df50c1c8afa2b3c',
       {
         input: {
-          images: [imageUrl],
+          images: extraImages && extraImages.length > 0 ? extraImages : [imageUrl],
           texture_size: 1024,
           mesh_simplify: 0.95,
           generate_model: true,
