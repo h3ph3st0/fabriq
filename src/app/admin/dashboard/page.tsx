@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X, Sparkles, Instagram, MessageCircle, Facebook } from 'lucide-react'
+import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X, Sparkles, MessageCircle } from 'lucide-react'
 import QRCode from 'qrcode'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useGLTF, Environment } from '@react-three/drei'
