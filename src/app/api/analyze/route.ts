@@ -1,6 +1,13 @@
 // src/app/api/analyze/route.ts
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+// Cliente Supabase con service role para leer shop_config sin RLS
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 // Rate limiting simple en memoria
 const requestCounts = new Map<string, { count: number; resetTime: number }>()
@@ -83,8 +90,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { base64Image, mimeType, serviceType, fileName, alturaCm, anchoCm, cantidad } =
-      await req.json()
+    const {
+      base64Image,
+      mimeType,
+      serviceType,
+      fileName,
+      alturaCm,
+      anchoCm,
+      cantidad,
+      tallerCodigo,   // ── NUEVO
+    } = await req.json()
 
     // Validar que llegó una imagen real
     if (!base64Image || !mimeType) {
@@ -106,6 +121,46 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ── NUEVO: buscar precios reales del taller ──────────────────────────────
+    let shopConfig = null
+    if (tallerCodigo) {
+      const { data, error } = await supabase
+        .from('shop_config')
+        .select('*')
+        .eq('codigo_taller', tallerCodigo)
+        .single()
+
+      if (!error && data) {
+        shopConfig = data
+        console.log(`Usando precios del taller: ${shopConfig.nombre_taller} (${tallerCodigo})`)
+      } else {
+        console.log(`Taller ${tallerCodigo} no encontrado, usando precios default`)
+      }
+    }
+
+    // Precios a usar: los del taller si existen, o valores default
+    const moneda = shopConfig?.moneda || 'ARS'
+
+    const precios = {
+      dtf: {
+        por_cm2: shopConfig?.costo_dtf_por_cm2 ?? 2.5,
+        transfer: shopConfig?.costo_transfer_dtf ?? 200,
+        mano_obra: shopConfig?.mano_obra_dtf ?? 300,
+        margen: shopConfig?.margen_dtf ?? 40,
+      },
+      '3d': {
+        filamento_por_gramo: shopConfig?.costo_filamento_por_gramo ?? 15,
+        hora_maquina: shopConfig?.costo_hora_maquina ?? 500,
+        margen: shopConfig?.margen_3d ?? 40,
+      },
+      sublimacion: {
+        por_cm2: shopConfig?.costo_sublimacion_por_cm2 ?? 1.8,
+        mano_obra: shopConfig?.mano_obra_sublimacion ?? 250,
+        margen: shopConfig?.margen_sublimacion ?? 40,
+      },
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     // Info de medidas para incluir en el prompt
     const medidaInfo = alturaCm
       ? `MEDIDAS ESPECIFICADAS POR EL CLIENTE:
@@ -119,6 +174,7 @@ export async function POST(req: NextRequest) {
          El precio final debe multiplicarse por la cantidad (${cantidad || 1}).`
       : `El cliente NO especificó medidas. Estimá el tamaño más común para este tipo de producto y aclaralo en la descripción del precio.`
 
+    // ── NUEVO: prompts con precios dinámicos del taller ──────────────────────
     const servicePrompts: Record<string, string> = {
       dtf: `Eres un experto técnico en impresión DTF (Direct to Film) sobre telas y prendas de vestir.
 Analizá esta imagen que un cliente quiere imprimir en DTF.
@@ -132,13 +188,17 @@ Evaluá:
 4. ¿El diseño tiene gradientes complejos que podrían verse mal en DTF?
 5. ¿Detectás logos, marcas registradas o personajes con copyright evidentes?
 
-Precios base por área de impresión en ARS:
-- Hasta A5 (15×21cm): 2500 ARS
-- Hasta A4 (21×29cm): 4000 ARS
-- Hasta A3 (29×42cm): 6500 ARS
-- Mayor a A3: 9000 ARS
-- Factor de complejidad entre 1.0 y 2.0 según detalles
-- Multiplicar por cantidad`,
+ESTRUCTURA DE COSTOS DEL TALLER (usá estos valores exactos para calcular):
+- Costo por cm² de film DTF: ${precios.dtf.por_cm2} ${moneda}
+- Costo fijo de transfer/termofijado: ${precios.dtf.transfer} ${moneda}
+- Mano de obra por unidad: ${precios.dtf.mano_obra} ${moneda}
+- Margen de ganancia del taller: ${precios.dtf.margen}%
+
+FÓRMULA DE PRECIO:
+precio_unitario = (area_cm2 × ${precios.dtf.por_cm2} + ${precios.dtf.transfer} + ${precios.dtf.mano_obra}) × (1 + ${precios.dtf.margen}/100)
+precio_total = precio_unitario × cantidad
+
+Aplicá un factor de complejidad entre 1.0 y 2.0 sobre el área según los detalles del diseño (colores, degradados, finos).`,
 
       '3d': `Eres un experto técnico en impresión 3D FDM (Fused Deposition Modeling).
 Analizá esta imagen o captura de pantalla de un modelo 3D que un cliente quiere imprimir.
@@ -152,13 +212,17 @@ Evaluá:
 4. ¿Qué orientación de impresión recomendarías?
 5. Estimá el peso aproximado según las medidas dadas
 
-Precios base por peso estimado en ARS:
-- Hasta 50g: 3000 ARS
-- 50 a 150g: 6500 ARS
-- 150 a 300g: 12000 ARS
-- Más de 300g: 18000 ARS
-- Factor de complejidad geométrica entre 1.0 y 2.0
-- Multiplicar por cantidad`,
+ESTRUCTURA DE COSTOS DEL TALLER (usá estos valores exactos para calcular):
+- Costo de filamento por gramo: ${precios['3d'].filamento_por_gramo} ${moneda}
+- Costo de hora de máquina: ${precios['3d'].hora_maquina} ${moneda}
+- Margen de ganancia del taller: ${precios['3d'].margen}%
+
+FÓRMULA DE PRECIO:
+Estimá el peso en gramos y el tiempo de impresión en horas según las medidas.
+precio_unitario = (peso_gramos × ${precios['3d'].filamento_por_gramo} + horas_impresion × ${precios['3d'].hora_maquina}) × (1 + ${precios['3d'].margen}/100)
+precio_total = precio_unitario × cantidad
+
+Aplicá un factor de complejidad entre 1.0 y 2.0 según la geometría del modelo.`,
 
       sublimacion: `Eres un experto técnico en sublimación para telas de poliéster y productos rígidos.
 Analizá esta imagen que un cliente quiere sublimar.
@@ -172,13 +236,18 @@ Evaluá:
 4. ¿El diseño incluye áreas muy oscuras o negras? (el negro puro puede verse azulado)
 5. ¿Detectás logos, marcas registradas o personajes con copyright evidentes?
 
-Precios base en ARS:
-- Diseño pequeño (hasta 20×20cm): 2000 ARS
-- Diseño mediano (hasta 30×40cm): 3500 ARS
-- Diseño grande o producto completo: 5500 ARS
-- Factor de complejidad entre 1.0 y 1.8
-- Multiplicar por cantidad`
+ESTRUCTURA DE COSTOS DEL TALLER (usá estos valores exactos para calcular):
+- Costo por cm² de sublimación: ${precios.sublimacion.por_cm2} ${moneda}
+- Mano de obra por unidad: ${precios.sublimacion.mano_obra} ${moneda}
+- Margen de ganancia del taller: ${precios.sublimacion.margen}%
+
+FÓRMULA DE PRECIO:
+precio_unitario = (area_cm2 × ${precios.sublimacion.por_cm2} + ${precios.sublimacion.mano_obra}) × (1 + ${precios.sublimacion.margen}/100)
+precio_total = precio_unitario × cantidad
+
+Aplicá un factor de complejidad entre 1.0 y 1.8 según los detalles del diseño.`,
     }
+    // ────────────────────────────────────────────────────────────────────────
 
     const prompt = `${servicePrompts[serviceType]}
 
@@ -190,9 +259,9 @@ Respondé ÚNICAMENTE con un JSON válido, sin texto adicional, sin backticks, c
   "recommendations": ["recomendación 1", "recomendación 2"],
   "estimated_time": "X a Y días hábiles",
   "price_breakdown": {
-    "base_cost": número en ARS,
+    "base_cost": número en ${moneda},
     "complexity_factor": número entre 1.0 y 2.0,
-    "total_ars": número total en ARS (ya multiplicado por cantidad si corresponde),
+    "total_ars": número total en ${moneda} (ya multiplicado por cantidad si corresponde),
     "description": "descripción de 1 línea explicando el cálculo con las medidas usadas"
   },
   "copyright_alert": true o false,

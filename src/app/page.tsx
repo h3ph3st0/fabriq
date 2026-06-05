@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { supabase } from '@/lib/supabase'
 import { analyzeFileWithGemini, GeminiAnalysis } from '@/lib/gemini'
@@ -53,6 +53,16 @@ export default function Home() {
   const [fotos3d, setFotos3d] = useState<string[]>([])
   const [uploadingFoto, setUploadingFoto] = useState(false)
 
+  // ── NUEVO: leer el código del taller desde la URL ──
+  const [tallerCodigo, setTallerCodigo] = useState<string | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const codigo = params.get('taller')
+    if (codigo) setTallerCodigo(codigo)
+  }, [])
+  // ──────────────────────────────────────────────────
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const f = acceptedFiles[0]
     if (!f) return
@@ -80,10 +90,20 @@ export default function Home() {
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
-      const result = await analyzeFileWithGemini(base64, file.type, serviceType, file.name,
+
+      // ── NUEVO: se pasa tallerCodigo al análisis ──
+      const result = await analyzeFileWithGemini(
+        base64,
+        file.type,
+        serviceType,
+        file.name,
         altura ? parseFloat(altura) : undefined,
         ancho ? parseFloat(ancho) : undefined,
-        cantidad ? parseInt(cantidad) : 1)
+        cantidad ? parseInt(cantidad) : 1,
+        tallerCodigo || undefined
+      )
+      // ────────────────────────────────────────────
+
       setAnalysis(result); setStep('result')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al analizar el archivo')
