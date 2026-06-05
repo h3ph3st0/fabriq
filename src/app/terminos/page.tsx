@@ -127,6 +127,41 @@ export default function Terminos() {
             </p>
           </section>
 
+          {/* Sección 8 — NUEVA: Modelos 3D generados por IA */}
+          <section style={{ marginBottom: 40 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#e85d04', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              8. Modelos 3D generados por inteligencia artificial
+            </h2>
+
+            {/* Aviso destacado para clientes */}
+            <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '16px 20px', marginBottom: 16 }}>
+              <p style={{ color: '#f59e0b', fontSize: 13, fontWeight: 600, margin: '0 0 8px' }}>
+                ⚠ Aviso importante para clientes — Impresión 3D
+              </p>
+              <p style={{ color: '#a07020', fontSize: 13, lineHeight: 1.8, margin: 0 }}>
+                Los modelos 3D generados por la inteligencia artificial de FabriQ a partir de imágenes son <strong style={{ color: '#f59e0b' }}>aproximaciones visuales</strong>, no modelos de precisión técnica. El resultado es una reconstrucción tridimensional basada en la imagen proporcionada, que puede presentar imperfecciones en la malla, detalles faltantes o geometría simplificada respecto al objeto original.
+              </p>
+            </div>
+
+            <p style={{ color: '#999', fontSize: 14, lineHeight: 1.8, marginBottom: 12 }}>
+              Antes de proceder con la impresión, el taller productor revisará el modelo generado, corregirá la malla si fuera necesario y realizará los ajustes técnicos que considere pertinentes para garantizar la calidad del objeto físico final. Este proceso de revisión y mejora es responsabilidad exclusiva del taller y forma parte del servicio contratado.
+            </p>
+
+            {/* Aviso destacado para talleres */}
+            <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 10, padding: '16px 20px', marginBottom: 16 }}>
+              <p style={{ color: '#3b82f6', fontSize: 13, fontWeight: 600, margin: '0 0 8px' }}>
+                📋 Aviso para talleres — Responsabilidad sobre el modelo
+              </p>
+              <p style={{ color: '#4a6fa5', fontSize: 13, lineHeight: 1.8, margin: 0 }}>
+                El modelo 3D generado por IA es un <strong style={{ color: '#3b82f6' }}>punto de partida, no un archivo listo para imprimir</strong>. El taller es responsable de revisar la malla, verificar la geometría, corregir imperfecciones, agregar o refinar detalles según su criterio profesional, y validar que el archivo sea apto para producción antes de iniciar la impresión. FabriQ no se responsabiliza por resultados derivados de la impresión de modelos sin revisión previa por parte del taller.
+              </p>
+            </div>
+
+            <p style={{ color: '#999', fontSize: 14, lineHeight: 1.8 }}>
+              La tecnología de generación 3D desde imágenes es una herramienta de asistencia que reduce significativamente los tiempos de modelado, pero no reemplaza el criterio técnico del operador especializado. FabriQ continuará mejorando esta funcionalidad a medida que la tecnología evolucione.
+            </p>
+          </section>
+
           <div style={{ borderTop: '1px solid #1e1e1e', paddingTop: 32, marginTop: 16 }}>
             <a href="/" style={{
               display: 'inline-block', padding: '12px 24px', borderRadius: 10,
