@@ -54,6 +54,9 @@ export default function Home() {
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [tallerCodigo, setTallerCodigo] = useState<string | null>(null)
 
+  // ── NUEVO: estado del checkbox de términos ──
+  const [aceptaTerminos, setAceptaTerminos] = useState(false)
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const codigo = params.get('taller')
@@ -102,17 +105,14 @@ export default function Home() {
   }
 
   async function handleSubmitOrder() {
-    if (!analysis || !file || !email) return
+    if (!analysis || !file || !email || !aceptaTerminos) return
     setSubmitting(true); setError(null)
     try {
-      // 1. Subir archivo a Supabase Storage
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
       const { error: uploadError } = await supabase.storage.from('uploads').upload(fileName, file)
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
-
-      // 2. Crear la orden en Supabase
       const { data: order, error: orderError } = await supabase.from('orders').insert({
         customer_email: email,
         file_name: file.name,
@@ -124,33 +124,23 @@ export default function Home() {
         notes: `Alto: ${altura || 'no especificado'}cm | Ancho: ${ancho || 'no especificado'}cm | Cantidad: ${cantidad} | ${notes}`,
       }).select().single()
       if (orderError) throw orderError
-
       setOrderId(order.id)
-
-      // 3. Si es 3D, primero pedir fotos adicionales, luego pagar
       if (serviceType === '3d') {
         setStep('fotos3d')
         return
       }
-
-      // 4. Para DTF y sublimación, ir directo al pago
       await redirectToPayment(order.id)
-
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el pedido')
-    } finally {
-      setSubmitting(false)
-    }
+    } finally { setSubmitting(false) }
   }
 
-  // ── NUEVO: función para crear el pago y redirigir a MP ──
   async function redirectToPayment(oid: string) {
     if (!analysis) return
     setStep('redirecting')
     try {
       const serviceLabel = SERVICE_LABELS[serviceType]
       const description = `FabriQ - ${serviceLabel}${parseInt(cantidad) > 1 ? ` x${cantidad}` : ''}`
-
       const response = await fetch('/api/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -161,20 +151,14 @@ export default function Home() {
           email,
         }),
       })
-
       if (!response.ok) throw new Error('Error al crear el pago')
-
       const { initPoint } = await response.json()
-
-      // Redirigir a MercadoPago
       window.location.href = initPoint
-
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al procesar el pago')
       setStep('form')
     }
   }
-  // ────────────────────────────────────────────────────────
 
   async function handleUploadFoto3d(file: File) {
     if (!orderId) return
@@ -199,8 +183,10 @@ export default function Home() {
   function reset() {
     setStep('upload'); setFile(null); setPreview(null); setAnalysis(null)
     setError(null); setEmail(''); setNotes(''); setAltura(''); setAncho('')
-    setCantidad('1'); setOrderId(null); setFotos3d([])
+    setCantidad('1'); setOrderId(null); setFotos3d([]); setAceptaTerminos(false)
   }
+
+  const puedeConfirmar = email && aceptaTerminos && !submitting
 
   return (
     <>
@@ -419,11 +405,52 @@ export default function Home() {
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Color de filamento, material, referencias de color..." rows={3} style={{ ...inputStyle, padding: '14px 16px', resize: 'vertical' as const }} />
               </div>
 
+              {/* ── NUEVO: checkbox de términos ── */}
+              <div style={{
+                marginBottom: 24,
+                padding: '16px',
+                background: aceptaTerminos ? 'rgba(232,93,4,0.05)' : '#0f0f0f',
+                border: `1px solid ${aceptaTerminos ? 'rgba(232,93,4,0.3)' : '#2a2a2a'}`,
+                borderRadius: 10,
+                transition: 'all 0.2s',
+              }}>
+                <label style={{ display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={aceptaTerminos}
+                    onChange={e => setAceptaTerminos(e.target.checked)}
+                    style={{ marginTop: 3, accentColor: '#e85d04', width: 16, height: 16, flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
+                    Declaro tener los derechos sobre las imágenes que subí, entiendo que los archivos 3D generados son propiedad de FabriQ y el taller, y que el pago corresponde al objeto físico terminado. He leído y acepto los{' '}
+                    <a
+                      href="/terminos"
+                      target="_blank"
+                      style={{ color: '#e85d04', textDecoration: 'none' }}
+                    >
+                      términos y condiciones
+                    </a>.
+                  </span>
+                </label>
+              </div>
+              {/* ────────────────────────────── */}
+
               {error && <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>{error}</div>}
 
               <div style={{ display: 'flex', gap: 12 }}>
                 <button onClick={() => setStep('result')} style={{ flex: 1, padding: '14px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>Volver</button>
-                <button onClick={handleSubmitOrder} disabled={!email || submitting} style={{ flex: 2, padding: '14px', borderRadius: 10, border: 'none', background: email && !submitting ? '#e85d04' : '#1a1a1a', color: email && !submitting ? '#fff' : '#444', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: email && !submitting ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <button
+                  onClick={handleSubmitOrder}
+                  disabled={!puedeConfirmar}
+                  style={{
+                    flex: 2, padding: '14px', borderRadius: 10, border: 'none',
+                    background: puedeConfirmar ? '#e85d04' : '#1a1a1a',
+                    color: puedeConfirmar ? '#fff' : '#444',
+                    fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                    cursor: puedeConfirmar ? 'pointer' : 'not-allowed',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    transition: 'all 0.2s',
+                  }}>
                   {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Ir a pagar <ChevronRight size={16} /></>}
                 </button>
               </div>
@@ -475,7 +502,6 @@ export default function Home() {
                 {fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}
               </p>
 
-              {/* ── NUEVO: botón que redirige a MP en vez de ir a 'done' ── */}
               <button
                 onClick={() => orderId && redirectToPayment(orderId)}
                 style={{
@@ -498,7 +524,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* PASO: CONFIRMACIÓN (fallback si no hay MP) */}
+          {/* PASO: CONFIRMACIÓN FALLBACK */}
           {step === 'done' && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
               <div style={{ width: 72, height: 72, background: 'rgba(74,222,128,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
@@ -516,10 +542,13 @@ export default function Home() {
           )}
         </div>
 
+        {/* ── NUEVO: footer con link a términos ── */}
         <footer style={{ borderTop: '1px solid #1a1a1a', padding: '20px 40px', textAlign: 'center', background: 'rgba(10,10,10,0.8)' }}>
           <p style={{ color: '#333', fontSize: 11, margin: 0 }}>
             FabriQ · Plataforma de manufactura on-demand ·{' '}
             <a href="/admin" style={{ color: '#444', textDecoration: 'none' }}>Acceso talleres</a>
+            {' · '}
+            <a href="/terminos" style={{ color: '#444', textDecoration: 'none' }}>Términos y condiciones</a>
           </p>
         </footer>
       </main>
