@@ -6,7 +6,7 @@ import { analyzeFileWithGemini, GeminiAnalysis } from '@/lib/gemini'
 import { Upload, CheckCircle, XCircle, AlertTriangle, Loader2, ChevronRight, Box } from 'lucide-react'
 
 type ServiceType = 'dtf' | '3d' | 'sublimacion'
-type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'fotos3d' | 'done'
+type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'fotos3d' | 'redirecting' | 'done'
 
 const SERVICE_LABELS: Record<ServiceType, string> = {
   dtf: 'DTF — Remeras y telas',
@@ -52,8 +52,6 @@ export default function Home() {
   const [orderId, setOrderId] = useState<string | null>(null)
   const [fotos3d, setFotos3d] = useState<string[]>([])
   const [uploadingFoto, setUploadingFoto] = useState(false)
-
-  // ── NUEVO: leer el código del taller desde la URL ──
   const [tallerCodigo, setTallerCodigo] = useState<string | null>(null)
 
   useEffect(() => {
@@ -61,7 +59,6 @@ export default function Home() {
     const codigo = params.get('taller')
     if (codigo) setTallerCodigo(codigo)
   }, [])
-  // ──────────────────────────────────────────────────
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const f = acceptedFiles[0]
@@ -90,20 +87,13 @@ export default function Home() {
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
-
-      // ── NUEVO: se pasa tallerCodigo al análisis ──
       const result = await analyzeFileWithGemini(
-        base64,
-        file.type,
-        serviceType,
-        file.name,
+        base64, file.type, serviceType, file.name,
         altura ? parseFloat(altura) : undefined,
         ancho ? parseFloat(ancho) : undefined,
         cantidad ? parseInt(cantidad) : 1,
         tallerCodigo || undefined
       )
-      // ────────────────────────────────────────────
-
       setAnalysis(result); setStep('result')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al analizar el archivo')
@@ -115,11 +105,14 @@ export default function Home() {
     if (!analysis || !file || !email) return
     setSubmitting(true); setError(null)
     try {
+      // 1. Subir archivo a Supabase Storage
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
       const { error: uploadError } = await supabase.storage.from('uploads').upload(fileName, file)
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
+
+      // 2. Crear la orden en Supabase
       const { data: order, error: orderError } = await supabase.from('orders').insert({
         customer_email: email,
         file_name: file.name,
@@ -131,16 +124,57 @@ export default function Home() {
         notes: `Alto: ${altura || 'no especificado'}cm | Ancho: ${ancho || 'no especificado'}cm | Cantidad: ${cantidad} | ${notes}`,
       }).select().single()
       if (orderError) throw orderError
+
       setOrderId(order.id)
+
+      // 3. Si es 3D, primero pedir fotos adicionales, luego pagar
       if (serviceType === '3d') {
         setStep('fotos3d')
-      } else {
-        setStep('done')
+        return
       }
+
+      // 4. Para DTF y sublimación, ir directo al pago
+      await redirectToPayment(order.id)
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el pedido')
-    } finally { setSubmitting(false) }
+    } finally {
+      setSubmitting(false)
+    }
   }
+
+  // ── NUEVO: función para crear el pago y redirigir a MP ──
+  async function redirectToPayment(oid: string) {
+    if (!analysis) return
+    setStep('redirecting')
+    try {
+      const serviceLabel = SERVICE_LABELS[serviceType]
+      const description = `FabriQ - ${serviceLabel}${parseInt(cantidad) > 1 ? ` x${cantidad}` : ''}`
+
+      const response = await fetch('/api/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: oid,
+          amount: analysis.price_breakdown.total_ars,
+          description,
+          email,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Error al crear el pago')
+
+      const { initPoint } = await response.json()
+
+      // Redirigir a MercadoPago
+      window.location.href = initPoint
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al procesar el pago')
+      setStep('form')
+    }
+  }
+  // ────────────────────────────────────────────────────────
 
   async function handleUploadFoto3d(file: File) {
     if (!orderId) return
@@ -390,7 +424,7 @@ export default function Home() {
               <div style={{ display: 'flex', gap: 12 }}>
                 <button onClick={() => setStep('result')} style={{ flex: 1, padding: '14px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>Volver</button>
                 <button onClick={handleSubmitOrder} disabled={!email || submitting} style={{ flex: 2, padding: '14px', borderRadius: 10, border: 'none', background: email && !submitting ? '#e85d04' : '#1a1a1a', color: email && !submitting ? '#fff' : '#444', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: email && !submitting ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Enviar pedido <ChevronRight size={16} /></>}
+                  {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Ir a pagar <ChevronRight size={16} /></>}
                 </button>
               </div>
             </div>
@@ -441,18 +475,30 @@ export default function Home() {
                 {fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}
               </p>
 
-              <button onClick={() => setStep('done')} style={{
-                padding: '14px 32px', borderRadius: 10, border: 'none',
-                background: '#e85d04', color: '#fff',
-                fontSize: 14, fontWeight: 600,
-                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
-              }}>
-                {fotos3d.length > 0 ? 'Listo, enviar fotos →' : 'Continuar sin fotos adicionales →'}
+              {/* ── NUEVO: botón que redirige a MP en vez de ir a 'done' ── */}
+              <button
+                onClick={() => orderId && redirectToPayment(orderId)}
+                style={{
+                  padding: '14px 32px', borderRadius: 10, border: 'none',
+                  background: '#e85d04', color: '#fff',
+                  fontSize: 14, fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                }}>
+                {fotos3d.length > 0 ? 'Listo, ir a pagar →' : 'Continuar y pagar →'}
               </button>
             </div>
           )}
 
-          {/* PASO: CONFIRMACIÓN */}
+          {/* PASO: REDIRIGIENDO A MP */}
+          {step === 'redirecting' && (
+            <div style={{ textAlign: 'center', padding: '80px 0' }}>
+              <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
+              <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Preparando tu pago...</h2>
+              <p style={{ color: '#666', fontSize: 14 }}>Te estamos redirigiendo a MercadoPago de forma segura</p>
+            </div>
+          )}
+
+          {/* PASO: CONFIRMACIÓN (fallback si no hay MP) */}
           {step === 'done' && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
               <div style={{ width: 72, height: 72, background: 'rgba(74,222,128,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
