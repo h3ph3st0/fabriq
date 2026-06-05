@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X } from 'lucide-react'
+import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X, Sparkles, Instagram, MessageCircle, Facebook } from 'lucide-react'
 import QRCode from 'qrcode'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useGLTF, Environment } from '@react-three/drei'
@@ -35,6 +35,12 @@ type Order = {
 type ShopConfig = {
   codigo_taller: string
   nombre_taller: string
+}
+
+type ContenidoRedes = {
+  instagram: string
+  whatsapp: string
+  facebook: string
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -72,6 +78,57 @@ function Visor3D({ modelUrl, wireframe }: { modelUrl: string; wireframe: boolean
   )
 }
 
+// ── Componente para mostrar el contenido generado ──
+function PanelContenido({ contenido, onCerrar }: { contenido: ContenidoRedes; onCerrar: () => void }) {
+  const [copiadoKey, setCopiadoKey] = useState<string | null>(null)
+
+  function copiar(texto: string, key: string) {
+    navigator.clipboard.writeText(texto)
+    setCopiadoKey(key)
+    setTimeout(() => setCopiadoKey(null), 2000)
+  }
+
+  const plataformas = [
+    { key: 'instagram', label: 'Instagram', icon: '📸', texto: contenido.instagram, color: '#E1306C' },
+    { key: 'whatsapp', label: 'WhatsApp', icon: '💬', texto: contenido.whatsapp, color: '#25D366' },
+    { key: 'facebook', label: 'Facebook', icon: '📘', texto: contenido.facebook, color: '#1877F2' },
+  ]
+
+  return (
+    <div style={{ marginTop: 16, padding: 16, background: 'rgba(232,93,4,0.04)', border: '1px solid rgba(232,93,4,0.2)', borderRadius: 12 }} onClick={e => e.stopPropagation()}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <p style={{ color: '#e85d04', fontSize: 12, fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={13} /> Contenido generado para redes
+        </p>
+        <button onClick={onCerrar} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer' }}>
+          <X size={14} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {plataformas.map(({ key, label, icon, texto, color }) => (
+          <div key={key} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #1e1e1e', background: '#0f0f0f' }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {icon} {label}
+              </span>
+              <button
+                onClick={() => copiar(texto, key)}
+                style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${copiadoKey === key ? color : '#2a2a2a'}`, background: copiadoKey === key ? `${color}20` : 'transparent', color: copiadoKey === key ? color : '#666', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}
+              >
+                <Copy size={10} /> {copiadoKey === key ? '¡Copiado!' : 'Copiar'}
+              </button>
+            </div>
+            <p style={{ margin: 0, padding: '12px 14px', fontSize: 13, color: '#999', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+              {texto}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
@@ -88,6 +145,10 @@ export default function Dashboard() {
   const [uploadingImage, setUploadingImage] = useState<string | null>(null)
   const [deletingOrder, setDeletingOrder] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  // ── NUEVO: estado para el generador de contenido ──
+  const [generandoContenido, setGenerandoContenido] = useState<string | null>(null)
+  const [contenidoGenerado, setContenidoGenerado] = useState<Record<string, ContenidoRedes>>({})
 
   useEffect(() => { checkAuth() }, [])
 
@@ -205,6 +266,38 @@ export default function Dashboard() {
     }
   }
 
+  // ── NUEVO: función para generar contenido para redes ──
+  async function handleGenerarContenido(order: Order, modo: 'entregado' | 'preventa') {
+    setGenerandoContenido(order.id + modo)
+
+    try {
+      const response = await fetch('/api/generate-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          serviceType: order.service_type,
+          priceArs: order.price_ars,
+          description: order.ai_analysis?.price_breakdown?.description || '',
+          nombreTaller: shopConfig?.nombre_taller || 'el taller',
+          modo,
+          notes: order.notes || '',
+        }),
+      })
+
+      if (!response.ok) throw new Error('Error al generar contenido')
+
+      const data = await response.json()
+      setContenidoGenerado(prev => ({ ...prev, [order.id + modo]: data }))
+
+    } catch (err) {
+      alert('Error al generar el contenido. Intentá de nuevo.')
+    } finally {
+      setGenerandoContenido(null)
+    }
+  }
+  // ────────────────────────────────────────────────────
+
   async function handleLogout() {
     await supabase.auth.signOut()
     window.location.href = '/admin'
@@ -244,6 +337,7 @@ export default function Dashboard() {
   return (
     <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Header */}
       <header style={{ borderBottom: '1px solid #1e1e1e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -320,7 +414,6 @@ export default function Dashboard() {
         {loading ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
             <Loader2 size={32} color="#e85d04" style={{ animation: 'spin 1s linear infinite' }} />
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         ) : orders.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: '#444' }}>
@@ -352,7 +445,6 @@ export default function Dashboard() {
                     <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
                     <span style={{ fontSize: 12, color: STATUS_LABELS[order.status]?.color || '#888' }}>{STATUS_LABELS[order.status]?.label || order.status}</span>
                     <span style={{ fontSize: 12, color: '#444' }}>{new Date(order.created_at).toLocaleDateString('es-AR')}</span>
-                    {/* Botón eliminar */}
                     <button
                       onClick={e => { e.stopPropagation(); handleDeleteOrder(order.id) }}
                       disabled={deletingOrder === order.id}
@@ -481,7 +573,7 @@ export default function Dashboard() {
                     )}
 
                     {/* Cambiar estado */}
-                    <div>
+                    <div style={{ marginBottom: 16 }}>
                       <p style={{ color: '#666', fontSize: 12, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cambiar estado</p>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {Object.entries(STATUS_LABELS).map(([key, val]) => (
@@ -494,6 +586,67 @@ export default function Dashboard() {
                         ))}
                       </div>
                     </div>
+
+                    {/* ── NUEVO: Botones generador de contenido ── */}
+                    <div style={{ borderTop: '1px solid #1e1e1e', paddingTop: 16 }} onClick={e => e.stopPropagation()}>
+                      <p style={{ color: '#666', fontSize: 12, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Sparkles size={12} /> Generar contenido para redes
+                      </p>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {/* Modo entregado — solo si está en done */}
+                        {order.status === 'done' && (
+                          <button
+                            onClick={() => handleGenerarContenido(order, 'entregado')}
+                            disabled={generandoContenido === order.id + 'entregado'}
+                            style={{
+                              padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)',
+                              background: 'rgba(74,222,128,0.05)', color: '#4ade80',
+                              fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                              display: 'flex', alignItems: 'center', gap: 6,
+                            }}
+                          >
+                            {generandoContenido === order.id + 'entregado'
+                              ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</>
+                              : <><Sparkles size={12} /> ✓ Trabajo entregado</>
+                            }
+                          </button>
+                        )}
+                        {/* Modo preventa — disponible siempre */}
+                        <button
+                          onClick={() => handleGenerarContenido(order, 'preventa')}
+                          disabled={generandoContenido === order.id + 'preventa'}
+                          style={{
+                            padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(232,93,4,0.3)',
+                            background: 'rgba(232,93,4,0.05)', color: '#e85d04',
+                            fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                            display: 'flex', alignItems: 'center', gap: 6,
+                          }}
+                        >
+                          {generandoContenido === order.id + 'preventa'
+                            ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</>
+                            : <><Sparkles size={12} /> 🚀 Nuevo en venta</>
+                          }
+                        </button>
+                      </div>
+
+                      {/* Panel con el contenido generado - modo entregado */}
+                      {contenidoGenerado[order.id + 'entregado'] && (
+                        <PanelContenido
+                          contenido={contenidoGenerado[order.id + 'entregado']}
+                          onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'entregado']; return n })}
+                        />
+                      )}
+
+                      {/* Panel con el contenido generado - modo preventa */}
+                      {contenidoGenerado[order.id + 'preventa'] && (
+                        <PanelContenido
+                          contenido={contenidoGenerado[order.id + 'preventa']}
+                          onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'preventa']; return n })}
+                        />
+                      )}
+                    </div>
+                    {/* ─────────────────────────────────────────── */}
+
                   </div>
                 )}
               </div>
