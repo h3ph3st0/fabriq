@@ -53,14 +53,26 @@ export default function Home() {
   const [fotos3d, setFotos3d] = useState<string[]>([])
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [tallerCodigo, setTallerCodigo] = useState<string | null>(null)
-
-  // ── NUEVO: estado del checkbox de términos ──
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
+
+  // ── NUEVO: guardar el user_id del taller al cargar ──
+  const [tallerUserId, setTallerUserId] = useState<string | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const codigo = params.get('taller')
-    if (codigo) setTallerCodigo(codigo)
+    if (codigo) {
+      setTallerCodigo(codigo)
+      // Buscar el user_id del taller para vincularlo a las órdenes
+      supabase
+        .from('shop_config')
+        .select('user_id')
+        .eq('codigo_taller', codigo)
+        .single()
+        .then(({ data }) => {
+          if (data) setTallerUserId(data.user_id)
+        })
+    }
   }, [])
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -113,6 +125,8 @@ export default function Home() {
       const { error: uploadError } = await supabase.storage.from('uploads').upload(fileName, file)
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
+
+      // ── NUEVO: incluir user_id del taller en la orden ──
       const { data: order, error: orderError } = await supabase.from('orders').insert({
         customer_email: email,
         file_name: file.name,
@@ -122,7 +136,10 @@ export default function Home() {
         price_ars: analysis.price_breakdown.total_ars,
         status: 'quoted',
         notes: `Alto: ${altura || 'no especificado'}cm | Ancho: ${ancho || 'no especificado'}cm | Cantidad: ${cantidad} | ${notes}`,
+        user_id: tallerUserId || null, // vincula la orden al taller
       }).select().single()
+      // ──────────────────────────────────────────────────
+
       if (orderError) throw orderError
       setOrderId(order.id)
       if (serviceType === '3d') {
@@ -202,7 +219,6 @@ export default function Home() {
         color: '#f0ece3',
         fontFamily: "'DM Sans', sans-serif",
       }}>
-        {/* Header */}
         <header style={{ borderBottom: '1px solid #1e1e1e', padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(8px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #e85d04, #f48c06)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -218,7 +234,6 @@ export default function Home() {
 
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '60px 24px' }}>
 
-          {/* PASO: UPLOAD */}
           {step === 'upload' && (
             <div>
               <h1 style={{ fontSize: 36, fontWeight: 300, letterSpacing: '-1px', lineHeight: 1.2, marginBottom: 8 }}>
@@ -301,7 +316,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* PASO: ANALIZANDO */}
           {step === 'analyzing' && (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
               <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
@@ -310,7 +324,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* PASO: RESULTADO */}
           {step === 'result' && analysis && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
@@ -386,7 +399,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* PASO: FORMULARIO */}
           {step === 'form' && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 400, marginBottom: 8 }}>Confirmar pedido</h2>
@@ -405,7 +417,6 @@ export default function Home() {
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Color de filamento, material, referencias de color..." rows={3} style={{ ...inputStyle, padding: '14px 16px', resize: 'vertical' as const }} />
               </div>
 
-              {/* ── NUEVO: checkbox de términos ── */}
               <div style={{
                 marginBottom: 24,
                 padding: '16px',
@@ -423,51 +434,35 @@ export default function Home() {
                   />
                   <span style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
                     Declaro tener los derechos sobre las imágenes que subí, entiendo que los archivos 3D generados son propiedad de FabriQ y el taller, y que el pago corresponde al objeto físico terminado. He leído y acepto los{' '}
-                    <a
-                      href="/terminos"
-                      target="_blank"
-                      style={{ color: '#e85d04', textDecoration: 'none' }}
-                    >
+                    <a href="/terminos" target="_blank" style={{ color: '#e85d04', textDecoration: 'none' }}>
                       términos y condiciones
                     </a>.
                   </span>
                 </label>
               </div>
-              {/* ────────────────────────────── */}
 
               {error && <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>{error}</div>}
 
               <div style={{ display: 'flex', gap: 12 }}>
                 <button onClick={() => setStep('result')} style={{ flex: 1, padding: '14px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>Volver</button>
-                <button
-                  onClick={handleSubmitOrder}
-                  disabled={!puedeConfirmar}
-                  style={{
-                    flex: 2, padding: '14px', borderRadius: 10, border: 'none',
-                    background: puedeConfirmar ? '#e85d04' : '#1a1a1a',
-                    color: puedeConfirmar ? '#fff' : '#444',
-                    fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
-                    cursor: puedeConfirmar ? 'pointer' : 'not-allowed',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    transition: 'all 0.2s',
-                  }}>
+                <button onClick={handleSubmitOrder} disabled={!puedeConfirmar} style={{
+                  flex: 2, padding: '14px', borderRadius: 10, border: 'none',
+                  background: puedeConfirmar ? '#e85d04' : '#1a1a1a',
+                  color: puedeConfirmar ? '#fff' : '#444',
+                  fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                  cursor: puedeConfirmar ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transition: 'all 0.2s',
+                }}>
                   {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Ir a pagar <ChevronRight size={16} /></>}
                 </button>
               </div>
             </div>
           )}
 
-          {/* PASO: FOTOS 3D */}
           {step === 'fotos3d' && (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{
-                width: 64, height: 64,
-                background: 'rgba(59,130,246,0.1)',
-                borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 20px',
-                border: '1px solid rgba(59,130,246,0.2)',
-              }}>
+              <div style={{ width: 64, height: 64, background: 'rgba(59,130,246,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', border: '1px solid rgba(59,130,246,0.2)' }}>
                 <Box size={28} color="#3b82f6" />
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>¡Pedido recibido!</h2>
@@ -481,12 +476,7 @@ export default function Home() {
                   <img key={i} src={url} alt={`ref-${i}`} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #2a2a2a' }} />
                 ))}
                 {fotos3d.length < 5 && (
-                  <label style={{
-                    width: 80, height: 80, borderRadius: 8,
-                    border: '2px dashed #2a2a2a',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', background: '#111', gap: 4
-                  }}>
+                  <label style={{ width: 80, height: 80, borderRadius: 8, border: '2px dashed #2a2a2a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#111', gap: 4 }}>
                     {uploadingFoto
                       ? <Loader2 size={20} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
                       : <><Upload size={20} color="#666" /><span style={{ color: '#666', fontSize: 10 }}>Agregar</span></>
@@ -502,20 +492,16 @@ export default function Home() {
                 {fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}
               </p>
 
-              <button
-                onClick={() => orderId && redirectToPayment(orderId)}
-                style={{
-                  padding: '14px 32px', borderRadius: 10, border: 'none',
-                  background: '#e85d04', color: '#fff',
-                  fontSize: 14, fontWeight: 600,
-                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
-                }}>
+              <button onClick={() => orderId && redirectToPayment(orderId)} style={{
+                padding: '14px 32px', borderRadius: 10, border: 'none',
+                background: '#e85d04', color: '#fff', fontSize: 14, fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+              }}>
                 {fotos3d.length > 0 ? 'Listo, ir a pagar →' : 'Continuar y pagar →'}
               </button>
             </div>
           )}
 
-          {/* PASO: REDIRIGIENDO A MP */}
           {step === 'redirecting' && (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
               <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
@@ -524,7 +510,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* PASO: CONFIRMACIÓN FALLBACK */}
           {step === 'done' && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
               <div style={{ width: 72, height: 72, background: 'rgba(74,222,128,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
@@ -542,7 +527,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* ── NUEVO: footer con link a términos ── */}
         <footer style={{ borderTop: '1px solid #1a1a1a', padding: '20px 40px', textAlign: 'center', background: 'rgba(10,10,10,0.8)' }}>
           <p style={{ color: '#333', fontSize: 11, margin: 0 }}>
             FabriQ · Plataforma de manufactura on-demand ·{' '}
