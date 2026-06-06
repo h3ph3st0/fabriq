@@ -14,6 +14,39 @@ const SERVICE_LABELS: Record<ServiceType, string> = {
   sublimacion: 'Sublimación'
 }
 
+// ── NUEVO: soportes por servicio ──
+const SOPORTES_DTF = [
+  'Remera',
+  'Buzo / Hoodie',
+  'Gorra',
+  'Bolsa / Tote bag',
+  'Ropa deportiva',
+  'Uniforme / Ropa de trabajo',
+  'Parche',
+  'Calco / Sticker textil',
+  'Otro',
+]
+
+const SOPORTES_SUBLIMACION = [
+  // Textil
+  'Remera de poliéster',
+  'Buzo de poliéster',
+  'Gorra',
+  'Toalla',
+  'Delantal',
+  'Medias',
+  // Rígidos
+  'Taza',
+  'Termo / Botella',
+  'Mousepad',
+  'Chapa / Placa',
+  'Puzzle',
+  'Portarretratos',
+  'Llavero',
+  'Otro',
+]
+// ─────────────────────────────────
+
 const inputStyle = {
   width: '100%',
   padding: '12px 16px',
@@ -39,12 +72,13 @@ const labelStyle = {
 export default function Home() {
   const [step, setStep] = useState<Step>('upload')
   const [serviceType, setServiceType] = useState<ServiceType>('dtf')
+  const [soporte, setSoporte] = useState<string>('') // ── NUEVO
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<GeminiAnalysis | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
-  const [telefono, setTelefono] = useState('') // ── NUEVO
+  const [telefono, setTelefono] = useState('')
   const [notes, setNotes] = useState('')
   const [altura, setAltura] = useState('')
   const [ancho, setAncho] = useState('')
@@ -67,11 +101,18 @@ export default function Home() {
         .select('user_id')
         .eq('codigo_taller', codigo)
         .single()
-        .then(({ data }) => {
-          if (data) setTallerUserId(data.user_id)
-        })
+        .then(({ data }) => { if (data) setTallerUserId(data.user_id) })
     }
   }, [])
+
+  // ── Resetear soporte cuando cambia el servicio ──
+  useEffect(() => { setSoporte('') }, [serviceType])
+
+  const soportesDisponibles = serviceType === 'dtf'
+    ? SOPORTES_DTF
+    : serviceType === 'sublimacion'
+    ? SOPORTES_SUBLIMACION
+    : []
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const f = acceptedFiles[0]
@@ -92,6 +133,11 @@ export default function Home() {
 
   async function handleAnalyze() {
     if (!file) return
+    // Validar que haya elegido soporte para DTF y sublimación
+    if ((serviceType === 'dtf' || serviceType === 'sublimacion') && !soporte) {
+      setError('Por favor seleccioná el tipo de producto antes de continuar.')
+      return
+    }
     setStep('analyzing'); setError(null)
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -105,7 +151,8 @@ export default function Home() {
         altura ? parseFloat(altura) : undefined,
         ancho ? parseFloat(ancho) : undefined,
         cantidad ? parseInt(cantidad) : 1,
-        tallerCodigo || undefined
+        tallerCodigo || undefined,
+        soporte || undefined  // ── NUEVO
       )
       setAnalysis(result); setStep('result')
     } catch (err) {
@@ -124,8 +171,8 @@ export default function Home() {
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
 
-      // ── NUEVO: teléfono incluido en las notas ──
       const notasCompletas = [
+        soporte ? `Soporte: ${soporte}` : null,
         `Alto: ${altura || 'no especificado'}cm`,
         `Ancho: ${ancho || 'no especificado'}cm`,
         `Cantidad: ${cantidad}`,
@@ -161,17 +208,12 @@ export default function Home() {
     if (!analysis) return
     setStep('redirecting')
     try {
-      const serviceLabel = SERVICE_LABELS[serviceType]
+      const serviceLabel = soporte ? `${SERVICE_LABELS[serviceType]} — ${soporte}` : SERVICE_LABELS[serviceType]
       const description = `FabriQ - ${serviceLabel}${parseInt(cantidad) > 1 ? ` x${cantidad}` : ''}`
       const response = await fetch('/api/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: oid,
-          amount: analysis.price_breakdown.total_ars,
-          description,
-          email,
-        }),
+        body: JSON.stringify({ orderId: oid, amount: analysis.price_breakdown.total_ars, description, email }),
       })
       if (!response.ok) throw new Error('Error al crear el pago')
       const { initPoint } = await response.json()
@@ -191,21 +233,16 @@ export default function Home() {
       const { error: uploadError } = await supabase.storage.from('uploads').upload(fileName, file)
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
-      await supabase.from('order_reference_images').insert({
-        order_id: orderId,
-        image_url: urlData.publicUrl,
-        uploaded_by: 'cliente'
-      })
+      await supabase.from('order_reference_images').insert({ order_id: orderId, image_url: urlData.publicUrl, uploaded_by: 'cliente' })
       setFotos3d(prev => [...prev, urlData.publicUrl])
-    } catch (err) {
-      console.error(err)
-    } finally { setUploadingFoto(false) }
+    } catch (err) { console.error(err) }
+    finally { setUploadingFoto(false) }
   }
 
   function reset() {
     setStep('upload'); setFile(null); setPreview(null); setAnalysis(null)
     setError(null); setEmail(''); setTelefono(''); setNotes('')
-    setAltura(''); setAncho(''); setCantidad('1')
+    setAltura(''); setAncho(''); setCantidad('1'); setSoporte('')
     setOrderId(null); setFotos3d([]); setAceptaTerminos(false)
   }
 
@@ -216,15 +253,8 @@ export default function Home() {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-      <main style={{
-        minHeight: '100vh',
-        background: '#0a0a0a',
-        backgroundImage: 'url(/fondo.png)',
-        backgroundSize: '350px',
-        backgroundRepeat: 'repeat',
-        color: '#f0ece3',
-        fontFamily: "'DM Sans', sans-serif",
-      }}>
+      <main style={{ minHeight: '100vh', background: '#0a0a0a', backgroundImage: 'url(/fondo.png)', backgroundSize: '350px', backgroundRepeat: 'repeat', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
+
         <header style={{ borderBottom: '1px solid #1e1e1e', padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(10,10,10,0.8)', backdropFilter: 'blur(8px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #e85d04, #f48c06)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -240,6 +270,7 @@ export default function Home() {
 
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '60px 24px' }}>
 
+          {/* PASO: UPLOAD */}
           {step === 'upload' && (
             <div>
               <h1 style={{ fontSize: 36, fontWeight: 300, letterSpacing: '-1px', lineHeight: 1.2, marginBottom: 8 }}>
@@ -250,7 +281,8 @@ export default function Home() {
                 Subí tu diseño, la IA analiza viabilidad técnica y genera el precio al instante.
               </p>
 
-              <div style={{ marginBottom: 28 }}>
+              {/* Selector de servicio */}
+              <div style={{ marginBottom: 24 }}>
                 <label style={labelStyle}>Tipo de servicio</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {(Object.keys(SERVICE_LABELS) as ServiceType[]).map(s => (
@@ -268,6 +300,37 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* ── NUEVO: Selector de soporte (solo para DTF y sublimación) ── */}
+              {soportesDisponibles.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <label style={labelStyle}>
+                    ¿En qué querés imprimir?
+                    <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {soportesDisponibles.map(s => (
+                      <button key={s} onClick={() => setSoporte(s)} style={{
+                        padding: '8px 16px', borderRadius: 8,
+                        border: soporte === s ? '1px solid #e85d04' : '1px solid #2a2a2a',
+                        background: soporte === s ? 'rgba(232,93,4,0.1)' : '#0f0f0f',
+                        color: soporte === s ? '#e85d04' : '#666',
+                        cursor: 'pointer', fontSize: 12,
+                        fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s',
+                      }}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                  {serviceType === 'sublimacion' && (
+                    <p style={{ color: '#444', fontSize: 11, marginTop: 8 }}>
+                      La sublimación requiere que el producto sea blanco y esté preparado para sublimar.
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* ─────────────────────────────────────────────────────────── */}
+
+              {/* Medidas */}
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>Medidas del producto final</label>
                 <div style={{ display: 'flex', gap: 12 }}>
@@ -284,6 +347,7 @@ export default function Home() {
                 <p style={{ color: '#444', fontSize: 11, marginTop: 6 }}>Las medidas permiten calcular el precio con mayor precisión</p>
               </div>
 
+              {/* Dropzone */}
               <div {...getRootProps()} style={{
                 border: `2px dashed ${isDragActive ? '#e85d04' : file ? '#2a6b2a' : '#2a2a2a'}`,
                 borderRadius: 16, padding: '48px 24px', textAlign: 'center', cursor: 'pointer',
@@ -322,14 +386,17 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: ANALIZANDO */}
           {step === 'analyzing' && (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
               <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
               <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Analizando tu diseño...</h2>
               <p style={{ color: '#666', fontSize: 14 }}>Gemini está evaluando viabilidad técnica y calculando el precio</p>
+              {soporte && <p style={{ color: '#555', fontSize: 13, marginTop: 8 }}>Soporte: {soporte}</p>}
             </div>
           )}
 
+          {/* PASO: RESULTADO */}
           {step === 'result' && analysis && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
@@ -339,7 +406,7 @@ export default function Home() {
                     {analysis.viable ? 'Diseño viable para producción' : 'Se requieren ajustes'}
                   </h2>
                   <p style={{ color: '#666', fontSize: 13, margin: '4px 0 0' }}>
-                    Análisis para {SERVICE_LABELS[serviceType]}
+                    {SERVICE_LABELS[serviceType]}{soporte ? ` — ${soporte}` : ''}
                     {altura && ` · ${altura}cm alto`}{ancho && ` × ${ancho}cm`}
                     {parseInt(cantidad) > 1 && ` · ${cantidad} unidades`}
                   </p>
@@ -405,11 +472,13 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: FORMULARIO */}
           {step === 'form' && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 400, marginBottom: 8 }}>Confirmar pedido</h2>
               <p style={{ color: '#666', fontSize: 14, marginBottom: 32 }}>
                 Precio final: <strong style={{ color: '#e85d04', fontFamily: "'DM Mono', monospace" }}>${analysis?.price_breakdown.total_ars.toLocaleString('es-AR')} ARS</strong>
+                {soporte && <span style={{ color: '#666' }}> · {soporte}</span>}
                 {parseInt(cantidad) > 1 && <span style={{ color: '#666' }}> · {cantidad} unidades</span>}
               </p>
 
@@ -418,50 +487,28 @@ export default function Home() {
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@email.com" style={{ ...inputStyle, padding: '14px 16px' }} />
               </div>
 
-              {/* ── NUEVO: campo WhatsApp ── */}
               <div style={{ marginBottom: 16 }}>
                 <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>
                   WhatsApp <span style={{ color: '#444', fontSize: 11, textTransform: 'none' }}>(opcional — para que el taller te contacte más rápido)</span>
                 </label>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#555', fontSize: 14 }}>💬</span>
-                  <input
-                    type="tel"
-                    value={telefono}
-                    onChange={e => setTelefono(e.target.value)}
-                    placeholder="Ej: 3454123456"
-                    style={{ ...inputStyle, padding: '14px 16px 14px 38px' }}
-                  />
+                  <input type="tel" value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="Ej: 3454123456" style={{ ...inputStyle, padding: '14px 16px 14px 38px' }} />
                 </div>
-                <p style={{ color: '#444', fontSize: 11, marginTop: 6 }}>Sin el 0 ni el 15. Solo el código de área y número.</p>
+                <p style={{ color: '#444', fontSize: 11, marginTop: 6 }}>Sin el 0 ni el 15. Solo código de área y número.</p>
               </div>
-              {/* ─────────────────────────── */}
 
               <div style={{ marginBottom: 24 }}>
                 <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Notas adicionales (opcional)</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Color de filamento, material, referencias de color..." rows={3} style={{ ...inputStyle, padding: '14px 16px', resize: 'vertical' as const }} />
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Color, material, referencias, talle de la remera..." rows={3} style={{ ...inputStyle, padding: '14px 16px', resize: 'vertical' as const }} />
               </div>
 
-              <div style={{
-                marginBottom: 24,
-                padding: '16px',
-                background: aceptaTerminos ? 'rgba(232,93,4,0.05)' : '#0f0f0f',
-                border: `1px solid ${aceptaTerminos ? 'rgba(232,93,4,0.3)' : '#2a2a2a'}`,
-                borderRadius: 10,
-                transition: 'all 0.2s',
-              }}>
+              <div style={{ marginBottom: 24, padding: '16px', background: aceptaTerminos ? 'rgba(232,93,4,0.05)' : '#0f0f0f', border: `1px solid ${aceptaTerminos ? 'rgba(232,93,4,0.3)' : '#2a2a2a'}`, borderRadius: 10, transition: 'all 0.2s' }}>
                 <label style={{ display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={aceptaTerminos}
-                    onChange={e => setAceptaTerminos(e.target.checked)}
-                    style={{ marginTop: 3, accentColor: '#e85d04', width: 16, height: 16, flexShrink: 0 }}
-                  />
+                  <input type="checkbox" checked={aceptaTerminos} onChange={e => setAceptaTerminos(e.target.checked)} style={{ marginTop: 3, accentColor: '#e85d04', width: 16, height: 16, flexShrink: 0 }} />
                   <span style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
                     Declaro tener los derechos sobre las imágenes que subí, entiendo que los archivos 3D generados son propiedad de FabriQ y el taller, y que el pago corresponde al objeto físico terminado. He leído y acepto los{' '}
-                    <a href="/terminos" target="_blank" style={{ color: '#e85d04', textDecoration: 'none' }}>
-                      términos y condiciones
-                    </a>.
+                    <a href="/terminos" target="_blank" style={{ color: '#e85d04', textDecoration: 'none' }}>términos y condiciones</a>.
                   </span>
                 </label>
               </div>
@@ -470,63 +517,41 @@ export default function Home() {
 
               <div style={{ display: 'flex', gap: 12 }}>
                 <button onClick={() => setStep('result')} style={{ flex: 1, padding: '14px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>Volver</button>
-                <button onClick={handleSubmitOrder} disabled={!puedeConfirmar} style={{
-                  flex: 2, padding: '14px', borderRadius: 10, border: 'none',
-                  background: puedeConfirmar ? '#e85d04' : '#1a1a1a',
-                  color: puedeConfirmar ? '#fff' : '#444',
-                  fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
-                  cursor: puedeConfirmar ? 'pointer' : 'not-allowed',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  transition: 'all 0.2s',
-                }}>
+                <button onClick={handleSubmitOrder} disabled={!puedeConfirmar} style={{ flex: 2, padding: '14px', borderRadius: 10, border: 'none', background: puedeConfirmar ? '#e85d04' : '#1a1a1a', color: puedeConfirmar ? '#fff' : '#444', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: puedeConfirmar ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }}>
                   {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Ir a pagar <ChevronRight size={16} /></>}
                 </button>
               </div>
             </div>
           )}
 
+          {/* PASO: FOTOS 3D */}
           {step === 'fotos3d' && (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
               <div style={{ width: 64, height: 64, background: 'rgba(59,130,246,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', border: '1px solid rgba(59,130,246,0.2)' }}>
                 <Box size={28} color="#3b82f6" />
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>¡Pedido recibido!</h2>
-              <p style={{ color: '#888', fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>
-                Para mejorar la calidad del modelo 3D podés agregar hasta 5 fotos adicionales del objeto desde distintos ángulos.
-              </p>
+              <p style={{ color: '#888', fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>Para mejorar la calidad del modelo 3D podés agregar hasta 5 fotos adicionales del objeto desde distintos ángulos.</p>
               <p style={{ color: '#555', fontSize: 12, marginBottom: 32 }}>Esto es opcional pero mejora mucho el resultado final.</p>
-
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 24 }}>
                 {fotos3d.map((url, i) => (
                   <img key={i} src={url} alt={`ref-${i}`} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #2a2a2a' }} />
                 ))}
                 {fotos3d.length < 5 && (
                   <label style={{ width: 80, height: 80, borderRadius: 8, border: '2px dashed #2a2a2a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#111', gap: 4 }}>
-                    {uploadingFoto
-                      ? <Loader2 size={20} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
-                      : <><Upload size={20} color="#666" /><span style={{ color: '#666', fontSize: 10 }}>Agregar</span></>
-                    }
-                    <input type="file" accept="image/*" style={{ display: 'none' }}
-                      onChange={e => { if (e.target.files?.[0]) handleUploadFoto3d(e.target.files[0]) }}
-                    />
+                    {uploadingFoto ? <Loader2 size={20} color="#666" style={{ animation: 'spin 1s linear infinite' }} /> : <><Upload size={20} color="#666" /><span style={{ color: '#666', fontSize: 10 }}>Agregar</span></>}
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleUploadFoto3d(e.target.files[0]) }} />
                   </label>
                 )}
               </div>
-
-              <p style={{ color: '#555', fontSize: 12, marginBottom: 24 }}>
-                {fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}
-              </p>
-
-              <button onClick={() => orderId && redirectToPayment(orderId)} style={{
-                padding: '14px 32px', borderRadius: 10, border: 'none',
-                background: '#e85d04', color: '#fff', fontSize: 14, fontWeight: 600,
-                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
-              }}>
+              <p style={{ color: '#555', fontSize: 12, marginBottom: 24 }}>{fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}</p>
+              <button onClick={() => orderId && redirectToPayment(orderId)} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: '#e85d04', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>
                 {fotos3d.length > 0 ? 'Listo, ir a pagar →' : 'Continuar y pagar →'}
               </button>
             </div>
           )}
 
+          {/* PASO: REDIRIGIENDO */}
           {step === 'redirecting' && (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
               <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
@@ -535,15 +560,14 @@ export default function Home() {
             </div>
           )}
 
+          {/* PASO: DONE */}
           {step === 'done' && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
               <div style={{ width: 72, height: 72, background: 'rgba(74,222,128,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
                 <CheckCircle size={36} color="#4ade80" />
               </div>
               <h2 style={{ fontSize: 26, fontWeight: 400, marginBottom: 8 }}>¡Todo listo!</h2>
-              <p style={{ color: '#666', fontSize: 14, marginBottom: 8 }}>
-                Te contactaremos a <strong style={{ color: '#888' }}>{email}</strong> para coordinar el pago.
-              </p>
+              <p style={{ color: '#666', fontSize: 14, marginBottom: 8 }}>Te contactaremos a <strong style={{ color: '#888' }}>{email}</strong> para coordinar el pago.</p>
               {orderId && <p style={{ color: '#444', fontSize: 12, fontFamily: "'DM Mono', monospace", marginBottom: 32 }}>Orden #{orderId.slice(0, 8).toUpperCase()}</p>}
               <button onClick={reset} style={{ padding: '14px 32px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>
                 Hacer otro pedido

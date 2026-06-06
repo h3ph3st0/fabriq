@@ -26,7 +26,8 @@ export async function analyzeFileWithGemini(
   alturaCm?: number,
   anchoCm?: number,
   cantidad?: number,
-  tallerCodigo?: string   // ── NUEVO: código del taller para usar sus precios reales
+  tallerCodigo?: string,
+  soporte?: string   // ── NUEVO: tipo de producto/soporte
 ): Promise<GeminiAnalysis> {
   const response = await fetch('/api/analyze', {
     method: 'POST',
@@ -39,7 +40,8 @@ export async function analyzeFileWithGemini(
       alturaCm,
       anchoCm,
       cantidad,
-      tallerCodigo,   // ── NUEVO: se envía al endpoint
+      tallerCodigo,
+      soporte,   // ── NUEVO
     }),
   })
 
