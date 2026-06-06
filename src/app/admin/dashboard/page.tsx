@@ -54,6 +54,13 @@ const SERVICE_LABELS: Record<string, string> = {
   dtf: 'DTF', '3d': '3D', sublimacion: 'Sublimación'
 }
 
+// ── Extrae el número de WhatsApp de las notas ──
+function extraerWhatsApp(notes: string): string | null {
+  if (!notes) return null
+  const match = notes.match(/WhatsApp:\s*(\d+)/)
+  return match ? match[1] : null
+}
+
 function Model3D({ url, wireframe }: { url: string; wireframe: boolean }) {
   const { scene } = useGLTF(url)
   scene.traverse((child: any) => {
@@ -78,7 +85,6 @@ function Visor3D({ modelUrl, wireframe }: { modelUrl: string; wireframe: boolean
   )
 }
 
-// ── Componente para mostrar el contenido generado ──
 function PanelContenido({ contenido, onCerrar }: { contenido: ContenidoRedes; onCerrar: () => void }) {
   const [copiadoKey, setCopiadoKey] = useState<string | null>(null)
 
@@ -104,7 +110,6 @@ function PanelContenido({ contenido, onCerrar }: { contenido: ContenidoRedes; on
           <X size={14} />
         </button>
       </div>
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {plataformas.map(({ key, label, icon, texto, color }) => (
           <div key={key} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 10, overflow: 'hidden' }}>
@@ -145,8 +150,6 @@ export default function Dashboard() {
   const [uploadingImage, setUploadingImage] = useState<string | null>(null)
   const [deletingOrder, setDeletingOrder] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  // ── NUEVO: estado para el generador de contenido ──
   const [generandoContenido, setGenerandoContenido] = useState<string | null>(null)
   const [contenidoGenerado, setContenidoGenerado] = useState<Record<string, ContenidoRedes>>({})
 
@@ -210,16 +213,10 @@ export default function Dashboard() {
     try {
       const fileExt = file.name.split('.').pop()
       const fileName = `extra-${orderId}-${Date.now()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(fileName, file)
+      const { error: uploadError } = await supabase.storage.from('uploads').upload(fileName, file)
       if (uploadError) throw uploadError
-
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
-      setExtraImages(prev => ({
-        ...prev,
-        [orderId]: [...(prev[orderId] || []), urlData.publicUrl]
-      }))
+      setExtraImages(prev => ({ ...prev, [orderId]: [...(prev[orderId] || []), urlData.publicUrl] }))
     } catch (err) {
       alert('Error al subir la imagen')
     } finally {
@@ -228,34 +225,22 @@ export default function Dashboard() {
   }
 
   function removeExtraImage(orderId: string, index: number) {
-    setExtraImages(prev => ({
-      ...prev,
-      [orderId]: prev[orderId].filter((_, i) => i !== index)
-    }))
+    setExtraImages(prev => ({ ...prev, [orderId]: prev[orderId].filter((_, i) => i !== index) }))
   }
 
   async function handleGenerate3D(order: Order) {
     if (!order.file_url) return
     setGenerating3d(order.id)
-
     try {
-      const allImages = [order.file_url, ...(extraImages[order.id] || [])]
       const response = await fetch('/api/generate-3d', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: order.file_url, extraImages: extraImages[order.id] || [], orderId: order.id, allImages })
+        body: JSON.stringify({ imageUrl: order.file_url, extraImages: extraImages[order.id] || [], orderId: order.id })
       })
-
       const data = await response.json()
       if (data.success && data.modelUrl) {
-        setOrders(prev => prev.map(o =>
-          o.id === order.id
-            ? { ...o, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' }
-            : o
-        ))
-        if (selected?.id === order.id) {
-          setSelected(prev => prev ? { ...prev, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' } : null)
-        }
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' } : o))
+        if (selected?.id === order.id) setSelected(prev => prev ? { ...prev, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' } : null)
       } else {
         alert(`Error: ${data.error || 'No se pudo generar el modelo 3D'}`)
       }
@@ -266,10 +251,8 @@ export default function Dashboard() {
     }
   }
 
-  // ── NUEVO: función para generar contenido para redes ──
   async function handleGenerarContenido(order: Order, modo: 'entregado' | 'preventa') {
     setGenerandoContenido(order.id + modo)
-
     try {
       const response = await fetch('/api/generate-content', {
         method: 'POST',
@@ -284,19 +267,15 @@ export default function Dashboard() {
           notes: order.notes || '',
         }),
       })
-
       if (!response.ok) throw new Error('Error al generar contenido')
-
       const data = await response.json()
       setContenidoGenerado(prev => ({ ...prev, [order.id + modo]: data }))
-
     } catch (err) {
       alert('Error al generar el contenido. Intentá de nuevo.')
     } finally {
       setGenerandoContenido(null)
     }
   }
-  // ────────────────────────────────────────────────────
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -305,8 +284,7 @@ export default function Dashboard() {
 
   function copyLink() {
     if (!shopConfig) return
-    const link = `${window.location.origin}/?taller=${shopConfig.codigo_taller}`
-    navigator.clipboard.writeText(link)
+    navigator.clipboard.writeText(`${window.location.origin}/?taller=${shopConfig.codigo_taller}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -326,20 +304,14 @@ export default function Dashboard() {
     a.click()
   }
 
-  const totalRevenue = orders
-    .filter(o => o.status === 'done')
-    .reduce((sum, o) => sum + (o.price_ars || 0), 0)
-
-  const tallerUrl = shopConfig
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?taller=${shopConfig.codigo_taller}`
-    : ''
+  const totalRevenue = orders.filter(o => o.status === 'done').reduce((sum, o) => sum + (o.price_ars || 0), 0)
+  const tallerUrl = shopConfig ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?taller=${shopConfig.codigo_taller}` : ''
 
   return (
     <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Header */}
       <header style={{ borderBottom: '1px solid #1e1e1e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #e85d04, #f48c06)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -347,9 +319,7 @@ export default function Dashboard() {
           </div>
           <span style={{ fontWeight: 600 }}>FabriQ</span>
           <span style={{ color: '#444', fontSize: 13 }}>/ Dashboard</span>
-          {shopConfig?.nombre_taller && (
-            <span style={{ color: '#666', fontSize: 13 }}>· {shopConfig.nombre_taller}</span>
-          )}
+          {shopConfig?.nombre_taller && <span style={{ color: '#666', fontSize: 13 }}>· {shopConfig.nombre_taller}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ color: '#666', fontSize: 13 }}>{userEmail}</span>
@@ -367,7 +337,6 @@ export default function Dashboard() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
 
-        {/* Panel QR */}
         {showQr && shopConfig && (
           <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 16, padding: 32, marginBottom: 32, display: 'flex', gap: 32, alignItems: 'center' }}>
             {qrDataUrl && <img src={qrDataUrl} alt="QR del taller" style={{ width: 160, height: 160, borderRadius: 12 }} />}
@@ -388,7 +357,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Métricas */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
           {[
             { label: 'Total órdenes', value: orders.length, color: '#f0ece3' },
@@ -403,7 +371,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Lista de órdenes */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>Órdenes recibidas</h2>
           <button onClick={loadOrders} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 12px', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
@@ -422,235 +389,187 @@ export default function Dashboard() {
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
-            {orders.map(order => (
-              <div key={order.id}
-                onClick={(e) => {
-                  const target = e.target as HTMLElement
-                  if (target.closest('canvas') || target.tagName === 'CANVAS' || target.closest('button') || target.closest('input')) return
-                  setSelected(selected?.id === order.id ? null : order)
-                }}
-                style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
+            {orders.map(order => {
+              const whatsapp = extraerWhatsApp(order.notes)
+              return (
+                <div key={order.id}
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement
+                    if (target.closest('canvas') || target.tagName === 'CANVAS' || target.closest('button') || target.closest('input')) return
+                    setSelected(selected?.id === order.id ? null : order)
+                  }}
+                  style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#444' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
-                    <span style={{ fontSize: 14 }}>{order.customer_email}</span>
-                    <span style={{ fontSize: 12, color: '#666', background: '#1a1a1a', padding: '2px 8px', borderRadius: 20 }}>{SERVICE_LABELS[order.service_type] || order.service_type}</span>
-                    {order.ai_analysis?.copyright_alert && <AlertTriangle size={14} color="#f59e0b" />}
-                    {order.service_type === '3d' && order.status_3d === 'ready' && (
-                      <span style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: 20 }}>3D listo</span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
-                    <span style={{ fontSize: 12, color: STATUS_LABELS[order.status]?.color || '#888' }}>{STATUS_LABELS[order.status]?.label || order.status}</span>
-                    <span style={{ fontSize: 12, color: '#444' }}>{new Date(order.created_at).toLocaleDateString('es-AR')}</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDeleteOrder(order.id) }}
-                      disabled={deletingOrder === order.id}
-                      style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '4px 8px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}
-                    >
-                      {deletingOrder === order.id
-                        ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
-                        : <Trash2 size={11} />
-                      }
-                    </button>
-                  </div>
-                </div>
-
-                {selected?.id === order.id && (
-                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1e1e1e' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                      <div>
-                        <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Archivo</p>
-                        <p style={{ fontSize: 13, margin: 0 }}>{order.file_name}</p>
-                      </div>
-                      <div>
-                        <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Notas del cliente</p>
-                        <p style={{ fontSize: 13, margin: 0, color: order.notes ? '#f0ece3' : '#444' }}>{order.notes || 'Sin notas'}</p>
-                      </div>
-                      {order.ai_analysis?.estimated_time && (
-                        <div>
-                          <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Tiempo estimado</p>
-                          <p style={{ fontSize: 13, margin: 0 }}>{order.ai_analysis.estimated_time}</p>
-                        </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: '#444' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
+                      <span style={{ fontSize: 14 }}>{order.customer_email}</span>
+                      <span style={{ fontSize: 12, color: '#666', background: '#1a1a1a', padding: '2px 8px', borderRadius: 20 }}>{SERVICE_LABELS[order.service_type] || order.service_type}</span>
+                      {order.ai_analysis?.copyright_alert && <AlertTriangle size={14} color="#f59e0b" />}
+                      {order.service_type === '3d' && order.status_3d === 'ready' && (
+                        <span style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: 20 }}>3D listo</span>
                       )}
-                      {order.ai_analysis?.price_breakdown?.description && (
-                        <div>
-                          <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Detalle del precio</p>
-                          <p style={{ fontSize: 13, margin: 0 }}>{order.ai_analysis.price_breakdown.description}</p>
-                        </div>
+                      {/* ── NUEVO: indicador de WhatsApp en la lista ── */}
+                      {whatsapp && (
+                        <span style={{ fontSize: 11, color: '#25D366', background: 'rgba(37,211,102,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(37,211,102,0.2)' }}>
+                          💬 WA
+                        </span>
                       )}
                     </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
+                      <span style={{ fontSize: 12, color: STATUS_LABELS[order.status]?.color || '#888' }}>{STATUS_LABELS[order.status]?.label || order.status}</span>
+                      <span style={{ fontSize: 12, color: '#444' }}>{new Date(order.created_at).toLocaleDateString('es-AR')}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDeleteOrder(order.id) }}
+                        disabled={deletingOrder === order.id}
+                        style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '4px 8px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}
+                      >
+                        {deletingOrder === order.id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={11} />}
+                      </button>
+                    </div>
+                  </div>
 
-                    {order.file_url && (
-                      <a href={order.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#e85d04', fontSize: 13, textDecoration: 'none', display: 'inline-block', marginBottom: 16 }}>
-                        Ver imagen del cliente →
-                      </a>
-                    )}
-
-                    {/* Panel de imágenes adicionales para 3D */}
-                    {order.service_type === '3d' && !order.stl_ia_url && (
-                      <div style={{ marginBottom: 16, padding: 16, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10 }} onClick={e => e.stopPropagation()}>
-                        <p style={{ color: '#3b82f6', fontSize: 12, fontWeight: 500, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Imágenes de referencia adicionales
-                        </p>
-                        <p style={{ color: '#555', fontSize: 11, margin: '0 0 12px', lineHeight: 1.5 }}>
-                          Agregá hasta 5 fotos del objeto desde distintos ángulos para mejorar la calidad del modelo 3D generado.
-                        </p>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                          {(extraImages[order.id] || []).map((url, i) => (
-                            <div key={i} style={{ position: 'relative', width: 64, height: 64 }}>
-                              <img src={url} alt={`extra-${i}`} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid #2a2a2a' }} />
-                              <button
-                                onClick={() => removeExtraImage(order.id, i)}
-                                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                              >
-                                <X size={10} />
-                              </button>
-                            </div>
-                          ))}
-                          {(extraImages[order.id] || []).length < 5 && (
-                            <label style={{ width: 64, height: 64, borderRadius: 6, border: '1px dashed #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#111' }}>
-                              {uploadingImage === order.id
-                                ? <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
-                                : <Plus size={16} color="#666" />
-                              }
-                              <input type="file" accept="image/*" style={{ display: 'none' }}
-                                onChange={e => { if (e.target.files?.[0]) handleUploadExtraImage(order.id, e.target.files[0]) }}
-                              />
-                            </label>
-                          )}
+                  {selected?.id === order.id && (
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1e1e1e' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                        <div>
+                          <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Archivo</p>
+                          <p style={{ fontSize: 13, margin: 0 }}>{order.file_name}</p>
                         </div>
-                        {(extraImages[order.id] || []).length > 0 && (
-                          <p style={{ color: '#3b82f6', fontSize: 11, margin: 0 }}>
-                            ✓ {(extraImages[order.id] || []).length} imagen/es adicional/es agregada/s
-                          </p>
+                        <div>
+                          <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Notas del cliente</p>
+                          <p style={{ fontSize: 13, margin: 0, color: order.notes ? '#f0ece3' : '#444' }}>{order.notes || 'Sin notas'}</p>
+                        </div>
+                        {order.ai_analysis?.estimated_time && (
+                          <div>
+                            <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Tiempo estimado</p>
+                            <p style={{ fontSize: 13, margin: 0 }}>{order.ai_analysis.estimated_time}</p>
+                          </div>
+                        )}
+                        {order.ai_analysis?.price_breakdown?.description && (
+                          <div>
+                            <p style={{ color: '#666', fontSize: 12, margin: '0 0 4px' }}>Detalle del precio</p>
+                            <p style={{ fontSize: 13, margin: 0 }}>{order.ai_analysis.price_breakdown.description}</p>
+                          </div>
                         )}
                       </div>
-                    )}
 
-                    {/* Botón generar 3D */}
-                    {order.service_type === '3d' && !order.stl_ia_url && (
-                      <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => handleGenerate3D(order)}
-                          disabled={generating3d === order.id}
-                          style={{
-                            padding: '10px 18px', borderRadius: 8, border: 'none',
-                            background: generating3d === order.id ? '#1a1a1a' : 'linear-gradient(135deg, #e85d04, #f48c06)',
-                            color: generating3d === order.id ? '#444' : '#fff',
-                            fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
-                            cursor: generating3d === order.id ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', gap: 8,
-                          }}
-                        >
-                          {generating3d === order.id
-                            ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D... (20-30 seg)</>
-                            : <><Cpu size={14} /> Generar modelo 3D con IA {(extraImages[order.id] || []).length > 0 ? `(${1 + (extraImages[order.id] || []).length} imágenes)` : ''}</>
-                          }
-                        </button>
-                      </div>
-                    )}
+                      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+                        {order.file_url && (
+                          <a href={order.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#e85d04', fontSize: 13, textDecoration: 'none' }}>
+                            Ver imagen del cliente →
+                          </a>
+                        )}
 
-                    {/* Visor 3D */}
-                    {order.stl_taller_url && (
-                      <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Modelo 3D generado</p>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => setWireframe(!wireframe)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #2a2a2a', background: wireframe ? 'rgba(232,93,4,0.1)' : 'transparent', color: wireframe ? '#e85d04' : '#888', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
-                              {wireframe ? <EyeOff size={12} /> : <Eye size={12} />}
-                              {wireframe ? 'Sólido' : 'Wireframe'}
-                            </button>
-                            <button onClick={() => downloadModel(order.stl_taller_url!, order.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#e85d04', color: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <Download size={12} /> Descargar GLB
-                            </button>
-                          </div>
-                        </div>
-                        <Visor3D modelUrl={order.stl_taller_url} wireframe={wireframe} />
-                      </div>
-                    )}
-
-                    {/* Cambiar estado */}
-                    <div style={{ marginBottom: 16 }}>
-                      <p style={{ color: '#666', fontSize: 12, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cambiar estado</p>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {Object.entries(STATUS_LABELS).map(([key, val]) => (
-                          <button key={key} type="button"
-                            onClick={e => { e.stopPropagation(); updateStatus(order.id, key) }}
-                            style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: order.status === key ? '#1e1e1e' : 'transparent', color: order.status === key ? val.color : '#555', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: order.status === key ? `1px solid ${val.color}` : '1px solid #2a2a2a' }}>
-                            {order.status === key && <CheckCircle size={10} style={{ marginRight: 4, display: 'inline' }} />}
-                            {val.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* ── NUEVO: Botones generador de contenido ── */}
-                    <div style={{ borderTop: '1px solid #1e1e1e', paddingTop: 16 }} onClick={e => e.stopPropagation()}>
-                      <p style={{ color: '#666', fontSize: 12, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Sparkles size={12} /> Generar contenido para redes
-                      </p>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {/* Modo entregado — solo si está en done */}
-                        {order.status === 'done' && (
-                          <button
-                            onClick={() => handleGenerarContenido(order, 'entregado')}
-                            disabled={generandoContenido === order.id + 'entregado'}
+                        {/* ── NUEVO: botón WhatsApp ── */}
+                        {whatsapp && (
+                          <a
+                            href={`https://wa.me/54${whatsapp}?text=Hola! Te contactamos desde ${shopConfig?.nombre_taller || 'FabriQ'} por tu pedido.`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{
-                              padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)',
-                              background: 'rgba(74,222,128,0.05)', color: '#4ade80',
-                              fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                               display: 'flex', alignItems: 'center', gap: 6,
+                              padding: '6px 12px', borderRadius: 8,
+                              border: '1px solid rgba(37,211,102,0.3)',
+                              background: 'rgba(37,211,102,0.05)',
+                              color: '#25D366', fontSize: 13, textDecoration: 'none',
                             }}
                           >
-                            {generandoContenido === order.id + 'entregado'
-                              ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</>
-                              : <><Sparkles size={12} /> ✓ Trabajo entregado</>
-                            }
-                          </button>
+                            <MessageCircle size={13} /> WhatsApp {whatsapp}
+                          </a>
                         )}
-                        {/* Modo preventa — disponible siempre */}
-                        <button
-                          onClick={() => handleGenerarContenido(order, 'preventa')}
-                          disabled={generandoContenido === order.id + 'preventa'}
-                          style={{
-                            padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(232,93,4,0.3)',
-                            background: 'rgba(232,93,4,0.05)', color: '#e85d04',
-                            fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
-                            display: 'flex', alignItems: 'center', gap: 6,
-                          }}
-                        >
-                          {generandoContenido === order.id + 'preventa'
-                            ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</>
-                            : <><Sparkles size={12} /> 🚀 Nuevo en venta</>
-                          }
-                        </button>
                       </div>
 
-                      {/* Panel con el contenido generado - modo entregado */}
-                      {contenidoGenerado[order.id + 'entregado'] && (
-                        <PanelContenido
-                          contenido={contenidoGenerado[order.id + 'entregado']}
-                          onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'entregado']; return n })}
-                        />
+                      {order.service_type === '3d' && !order.stl_ia_url && (
+                        <div style={{ marginBottom: 16, padding: 16, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10 }} onClick={e => e.stopPropagation()}>
+                          <p style={{ color: '#3b82f6', fontSize: 12, fontWeight: 500, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Imágenes de referencia adicionales</p>
+                          <p style={{ color: '#555', fontSize: 11, margin: '0 0 12px', lineHeight: 1.5 }}>Agregá hasta 5 fotos del objeto desde distintos ángulos para mejorar la calidad del modelo 3D generado.</p>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                            {(extraImages[order.id] || []).map((url, i) => (
+                              <div key={i} style={{ position: 'relative', width: 64, height: 64 }}>
+                                <img src={url} alt={`extra-${i}`} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid #2a2a2a' }} />
+                                <button onClick={() => removeExtraImage(order.id, i)} style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                                  <X size={10} />
+                                </button>
+                              </div>
+                            ))}
+                            {(extraImages[order.id] || []).length < 5 && (
+                              <label style={{ width: 64, height: 64, borderRadius: 6, border: '1px dashed #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#111' }}>
+                                {uploadingImage === order.id ? <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={16} color="#666" />}
+                                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleUploadExtraImage(order.id, e.target.files[0]) }} />
+                              </label>
+                            )}
+                          </div>
+                          {(extraImages[order.id] || []).length > 0 && <p style={{ color: '#3b82f6', fontSize: 11, margin: 0 }}>✓ {(extraImages[order.id] || []).length} imagen/es adicional/es agregada/s</p>}
+                        </div>
                       )}
 
-                      {/* Panel con el contenido generado - modo preventa */}
-                      {contenidoGenerado[order.id + 'preventa'] && (
-                        <PanelContenido
-                          contenido={contenidoGenerado[order.id + 'preventa']}
-                          onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'preventa']; return n })}
-                        />
+                      {order.service_type === '3d' && !order.stl_ia_url && (
+                        <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
+                          <button onClick={() => handleGenerate3D(order)} disabled={generating3d === order.id} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: generating3d === order.id ? '#1a1a1a' : 'linear-gradient(135deg, #e85d04, #f48c06)', color: generating3d === order.id ? '#444' : '#fff', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: generating3d === order.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {generating3d === order.id ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D... (20-30 seg)</> : <><Cpu size={14} /> Generar modelo 3D con IA {(extraImages[order.id] || []).length > 0 ? `(${1 + (extraImages[order.id] || []).length} imágenes)` : ''}</>}
+                          </button>
+                        </div>
                       )}
+
+                      {order.stl_taller_url && (
+                        <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <p style={{ color: '#666', fontSize: 12, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Modelo 3D generado</p>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button onClick={() => setWireframe(!wireframe)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #2a2a2a', background: wireframe ? 'rgba(232,93,4,0.1)' : 'transparent', color: wireframe ? '#e85d04' : '#888', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
+                                {wireframe ? <EyeOff size={12} /> : <Eye size={12} />} {wireframe ? 'Sólido' : 'Wireframe'}
+                              </button>
+                              <button onClick={() => downloadModel(order.stl_taller_url!, order.id)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#e85d04', color: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Download size={12} /> Descargar GLB
+                              </button>
+                            </div>
+                          </div>
+                          <Visor3D modelUrl={order.stl_taller_url} wireframe={wireframe} />
+                        </div>
+                      )}
+
+                      <div style={{ marginBottom: 16 }}>
+                        <p style={{ color: '#666', fontSize: 12, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cambiar estado</p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {Object.entries(STATUS_LABELS).map(([key, val]) => (
+                            <button key={key} type="button" onClick={e => { e.stopPropagation(); updateStatus(order.id, key) }} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: order.status === key ? '#1e1e1e' : 'transparent', color: order.status === key ? val.color : '#555', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: order.status === key ? `1px solid ${val.color}` : '1px solid #2a2a2a' }}>
+                              {order.status === key && <CheckCircle size={10} style={{ marginRight: 4, display: 'inline' }} />}
+                              {val.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ borderTop: '1px solid #1e1e1e', paddingTop: 16 }} onClick={e => e.stopPropagation()}>
+                        <p style={{ color: '#666', fontSize: 12, margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Sparkles size={12} /> Generar contenido para redes
+                        </p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {order.status === 'done' && (
+                            <button onClick={() => handleGenerarContenido(order, 'entregado')} disabled={generandoContenido === order.id + 'entregado'} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.05)', color: '#4ade80', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {generandoContenido === order.id + 'entregado' ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Sparkles size={12} /> ✓ Trabajo entregado</>}
+                            </button>
+                          )}
+                          <button onClick={() => handleGenerarContenido(order, 'preventa')} disabled={generandoContenido === order.id + 'preventa'} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(232,93,4,0.3)', background: 'rgba(232,93,4,0.05)', color: '#e85d04', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {generandoContenido === order.id + 'preventa' ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Sparkles size={12} /> 🚀 Nuevo en venta</>}
+                          </button>
+                        </div>
+
+                        {contenidoGenerado[order.id + 'entregado'] && (
+                          <PanelContenido contenido={contenidoGenerado[order.id + 'entregado']} onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'entregado']; return n })} />
+                        )}
+                        {contenidoGenerado[order.id + 'preventa'] && (
+                          <PanelContenido contenido={contenidoGenerado[order.id + 'preventa']} onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'preventa']; return n })} />
+                        )}
+                      </div>
                     </div>
-                    {/* ─────────────────────────────────────────── */}
-
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

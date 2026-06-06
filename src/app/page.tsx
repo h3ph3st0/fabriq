@@ -44,6 +44,7 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<GeminiAnalysis | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
+  const [telefono, setTelefono] = useState('') // ── NUEVO
   const [notes, setNotes] = useState('')
   const [altura, setAltura] = useState('')
   const [ancho, setAncho] = useState('')
@@ -54,8 +55,6 @@ export default function Home() {
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [tallerCodigo, setTallerCodigo] = useState<string | null>(null)
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
-
-  // ── NUEVO: guardar el user_id del taller al cargar ──
   const [tallerUserId, setTallerUserId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -63,7 +62,6 @@ export default function Home() {
     const codigo = params.get('taller')
     if (codigo) {
       setTallerCodigo(codigo)
-      // Buscar el user_id del taller para vincularlo a las órdenes
       supabase
         .from('shop_config')
         .select('user_id')
@@ -126,7 +124,15 @@ export default function Home() {
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
 
-      // ── NUEVO: incluir user_id del taller en la orden ──
+      // ── NUEVO: teléfono incluido en las notas ──
+      const notasCompletas = [
+        `Alto: ${altura || 'no especificado'}cm`,
+        `Ancho: ${ancho || 'no especificado'}cm`,
+        `Cantidad: ${cantidad}`,
+        telefono ? `WhatsApp: ${telefono}` : null,
+        notes || null,
+      ].filter(Boolean).join(' | ')
+
       const { data: order, error: orderError } = await supabase.from('orders').insert({
         customer_email: email,
         file_name: file.name,
@@ -135,10 +141,9 @@ export default function Home() {
         ai_analysis: analysis,
         price_ars: analysis.price_breakdown.total_ars,
         status: 'quoted',
-        notes: `Alto: ${altura || 'no especificado'}cm | Ancho: ${ancho || 'no especificado'}cm | Cantidad: ${cantidad} | ${notes}`,
-        user_id: tallerUserId || null, // vincula la orden al taller
+        notes: notasCompletas,
+        user_id: tallerUserId || null,
       }).select().single()
-      // ──────────────────────────────────────────────────
 
       if (orderError) throw orderError
       setOrderId(order.id)
@@ -199,8 +204,9 @@ export default function Home() {
 
   function reset() {
     setStep('upload'); setFile(null); setPreview(null); setAnalysis(null)
-    setError(null); setEmail(''); setNotes(''); setAltura(''); setAncho('')
-    setCantidad('1'); setOrderId(null); setFotos3d([]); setAceptaTerminos(false)
+    setError(null); setEmail(''); setTelefono(''); setNotes('')
+    setAltura(''); setAncho(''); setCantidad('1')
+    setOrderId(null); setFotos3d([]); setAceptaTerminos(false)
   }
 
   const puedeConfirmar = email && aceptaTerminos && !submitting
@@ -411,6 +417,25 @@ export default function Home() {
                 <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Email *</label>
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@email.com" style={{ ...inputStyle, padding: '14px 16px' }} />
               </div>
+
+              {/* ── NUEVO: campo WhatsApp ── */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>
+                  WhatsApp <span style={{ color: '#444', fontSize: 11, textTransform: 'none' }}>(opcional — para que el taller te contacte más rápido)</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#555', fontSize: 14 }}>💬</span>
+                  <input
+                    type="tel"
+                    value={telefono}
+                    onChange={e => setTelefono(e.target.value)}
+                    placeholder="Ej: 3454123456"
+                    style={{ ...inputStyle, padding: '14px 16px 14px 38px' }}
+                  />
+                </div>
+                <p style={{ color: '#444', fontSize: 11, marginTop: 6 }}>Sin el 0 ni el 15. Solo el código de área y número.</p>
+              </div>
+              {/* ─────────────────────────── */}
 
               <div style={{ marginBottom: 24 }}>
                 <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Notas adicionales (opcional)</label>
