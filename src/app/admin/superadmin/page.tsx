@@ -31,7 +31,7 @@ const PLAN_LABELS: Record<string, { label: string; color: string; precio: string
   agency:        { label: 'Agency',        color: '#f59e0b', precio: '$60 USD/mes + 0.5%' },
 }
 
-const SUPERADMIN_EMAIL = 'cristhian@calavera.com' // ← cambiá por tu email real
+const SUPERADMIN_EMAIL = '87cristhianfam@gmail.com' // ← cambiá por tu email real
 
 function diasRestantes(trialExpiresAt?: string): number | null {
   if (!trialExpiresAt) return null
