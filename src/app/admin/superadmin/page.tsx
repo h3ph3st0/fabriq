@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, Loader2, CheckCircle, XCircle, Clock, ArrowLeft, RefreshCw } from 'lucide-react'
+import { Box, Loader2, CheckCircle, XCircle, Clock, ArrowLeft, RefreshCw, Trash2 } from 'lucide-react'
 
 type Taller = {
   id: string
@@ -15,6 +15,7 @@ type Taller = {
   moneda: string
   trial_expires_at?: string
   plan?: string
+  exento?: boolean
 }
 
 const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
@@ -31,7 +32,7 @@ const PLAN_LABELS: Record<string, { label: string; color: string; precio: string
   agency:        { label: 'Agency',        color: '#f59e0b', precio: '$60 USD/mes + 0.5%' },
 }
 
-const SUPERADMIN_EMAIL = '87cristhianfam@gmail.com' // ← cambiá por tu email real
+const SUPERADMIN_EMAIL = '87cristhianfam@gmail.com'
 
 function diasRestantes(trialExpiresAt?: string): number | null {
   if (!trialExpiresAt) return null
@@ -46,6 +47,7 @@ export default function Superadmin() {
   const [actualizando, setActualizando] = useState<string | null>(null)
   const [autorizado, setAutorizado] = useState(false)
   const [cambiandoPlan, setCambiandoPlan] = useState<string | null>(null)
+  const [eliminando, setEliminando] = useState<string | null>(null)
 
   useEffect(() => { checkAuth() }, [])
 
@@ -70,41 +72,39 @@ export default function Superadmin() {
   async function cambiarEstado(userId: string, nuevoEstado: string) {
     setActualizando(userId)
     const updates: Record<string, unknown> = { estado: nuevoEstado }
-
-    // Al aprobar, setear trial de 14 días y plan trial
     if (nuevoEstado === 'activo') {
       const trialExpires = new Date()
       trialExpires.setDate(trialExpires.getDate() + 14)
       updates.trial_expires_at = trialExpires.toISOString()
       updates.plan = 'trial'
     }
-
-    const { error } = await supabase
-      .from('shop_config')
-      .update(updates)
-      .eq('user_id', userId)
-
-    if (!error) {
-      setTalleres(prev => prev.map(t =>
-        t.user_id === userId ? { ...t, ...updates } : t
-      ))
-    }
+    const { error } = await supabase.from('shop_config').update(updates).eq('user_id', userId)
+    if (!error) setTalleres(prev => prev.map(t => t.user_id === userId ? { ...t, ...updates } : t))
     setActualizando(null)
   }
 
   async function cambiarPlan(userId: string, nuevoPlan: string) {
     setCambiandoPlan(userId)
-    const { error } = await supabase
-      .from('shop_config')
-      .update({ plan: nuevoPlan })
-      .eq('user_id', userId)
-
-    if (!error) {
-      setTalleres(prev => prev.map(t =>
-        t.user_id === userId ? { ...t, plan: nuevoPlan } : t
-      ))
-    }
+    const { error } = await supabase.from('shop_config').update({ plan: nuevoPlan }).eq('user_id', userId)
+    if (!error) setTalleres(prev => prev.map(t => t.user_id === userId ? { ...t, plan: nuevoPlan } : t))
     setCambiandoPlan(null)
+  }
+
+  async function toggleExento(userId: string, valorActual: boolean) {
+    const { error } = await supabase.from('shop_config').update({ exento: !valorActual }).eq('user_id', userId)
+    if (!error) setTalleres(prev => prev.map(t => t.user_id === userId ? { ...t, exento: !valorActual } : t))
+  }
+
+  async function eliminarTaller(userId: string, nombre: string) {
+    if (!confirm(`¿Estás seguro de eliminar "${nombre}"? Esta acción no se puede deshacer.`)) return
+    setEliminando(userId)
+    const { error } = await supabase.from('shop_config').delete().eq('user_id', userId)
+    if (!error) {
+      setTalleres(prev => prev.filter(t => t.user_id !== userId))
+    } else {
+      alert('Error al eliminar el taller')
+    }
+    setEliminando(null)
   }
 
   if (!autorizado) return null
@@ -170,34 +170,36 @@ export default function Superadmin() {
               const planInfo = PLAN_LABELS[taller.plan || 'trial']
 
               return (
-                <div key={taller.user_id} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px' }}>
+                <div key={taller.user_id} style={{ background: '#111', border: `1px solid ${taller.exento ? 'rgba(74,222,128,0.2)' : '#1e1e1e'}`, borderRadius: 12, padding: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
 
-                    {/* Info del taller */}
+                    {/* Info */}
                     <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 15, fontWeight: 500, margin: '0 0 6px' }}>{taller.nombre_taller}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <p style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>{taller.nombre_taller}</p>
+                        {/* Badge exento */}
+                        {taller.exento && (
+                          <span style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(74,222,128,0.2)' }}>
+                            ⭐ Exento
+                          </span>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                         <p style={{ fontSize: 12, color: '#555', margin: 0, fontFamily: "'DM Mono', monospace" }}>
                           {taller.codigo_taller} · {taller.moneda}
                         </p>
-
-                        {/* Badge estado */}
                         <span style={{ fontSize: 11, color: ESTADO_LABELS[taller.estado]?.color || '#888', background: `${ESTADO_LABELS[taller.estado]?.color}15`, padding: '2px 8px', borderRadius: 20, border: `1px solid ${ESTADO_LABELS[taller.estado]?.color}30` }}>
                           {ESTADO_LABELS[taller.estado]?.label || taller.estado}
                         </span>
-
-                        {/* Badge plan */}
                         <span style={{ fontSize: 11, color: planInfo.color, background: `${planInfo.color}15`, padding: '2px 8px', borderRadius: 20, border: `1px solid ${planInfo.color}30` }}>
                           {planInfo.label} — {planInfo.precio}
                         </span>
-
-                        {/* Badge trial */}
                         {enPrueba && (
                           <span style={{ fontSize: 11, color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(59,130,246,0.2)' }}>
                             Trial: {dias} días restantes
                           </span>
                         )}
-                        {trialVencido && (
+                        {trialVencido && !taller.exento && (
                           <span style={{ fontSize: 11, color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)' }}>
                             Trial vencido
                           </span>
@@ -208,11 +210,11 @@ export default function Superadmin() {
                     {/* Acciones */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
 
-                      {/* Cambiar estado */}
+                      {/* Estado + Eliminar */}
                       {actualizando === taller.user_id ? (
                         <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
                       ) : (
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {taller.estado !== 'activo' && (
                             <button onClick={() => cambiarEstado(taller.user_id, 'activo')} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.05)', color: '#4ade80', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
                               <CheckCircle size={12} /> Aprobar
@@ -228,12 +230,30 @@ export default function Superadmin() {
                               <XCircle size={12} /> Bloquear
                             </button>
                           )}
+                          {/* ── NUEVO: botón eliminar ── */}
+                          {!taller.exento && (
+                            <button
+                              onClick={() => eliminarTaller(taller.user_id, taller.nombre_taller)}
+                              disabled={eliminando === taller.user_id}
+                              style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              {eliminando === taller.user_id ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <><Trash2 size={12} /> Eliminar</>}
+                            </button>
+                          )}
                         </div>
                       )}
 
-                      {/* Cambiar plan */}
+                      {/* Plan + Exento */}
                       {taller.estado === 'activo' && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {/* Toggle exento */}
+                          <button
+                            onClick={() => toggleExento(taller.user_id, taller.exento || false)}
+                            style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${taller.exento ? 'rgba(74,222,128,0.3)' : '#2a2a2a'}`, background: taller.exento ? 'rgba(74,222,128,0.05)' : 'transparent', color: taller.exento ? '#4ade80' : '#555', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                          >
+                            {taller.exento ? '⭐ Exento' : 'Marcar exento'}
+                          </button>
+
                           <span style={{ fontSize: 11, color: '#555' }}>Plan:</span>
                           {cambiandoPlan === taller.user_id ? (
                             <Loader2 size={14} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
