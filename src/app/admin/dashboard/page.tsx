@@ -35,6 +35,8 @@ type Order = {
 type ShopConfig = {
   codigo_taller: string
   nombre_taller: string
+  trial_expires_at?: string
+  plan?: string
 }
 
 type ContenidoRedes = {
@@ -54,11 +56,24 @@ const SERVICE_LABELS: Record<string, string> = {
   dtf: 'DTF', '3d': '3D', sublimacion: 'Sublimación'
 }
 
-// ── Extrae el número de WhatsApp de las notas ──
+const PLAN_LABELS: Record<string, { label: string; color: string }> = {
+  trial:         { label: 'Trial',         color: '#888' },
+  early_adopter: { label: 'Early Adopter', color: '#a855f7' },
+  base:          { label: 'Base',          color: '#3b82f6' },
+  pro:           { label: 'Pro',           color: '#e85d04' },
+  agency:        { label: 'Agency',        color: '#f59e0b' },
+}
+
 function extraerWhatsApp(notes: string): string | null {
   if (!notes) return null
   const match = notes.match(/WhatsApp:\s*(\d+)/)
   return match ? match[1] : null
+}
+
+function diasRestantesTrial(trialExpiresAt?: string): number | null {
+  if (!trialExpiresAt) return null
+  const diff = new Date(trialExpiresAt).getTime() - Date.now()
+  return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
 function Model3D({ url, wireframe }: { url: string; wireframe: boolean }) {
@@ -114,19 +129,12 @@ function PanelContenido({ contenido, onCerrar }: { contenido: ContenidoRedes; on
         {plataformas.map(({ key, label, icon, texto, color }) => (
           <div key={key} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #1e1e1e', background: '#0f0f0f' }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {icon} {label}
-              </span>
-              <button
-                onClick={() => copiar(texto, key)}
-                style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${copiadoKey === key ? color : '#2a2a2a'}`, background: copiadoKey === key ? `${color}20` : 'transparent', color: copiadoKey === key ? color : '#666', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}
-              >
+              <span style={{ fontSize: 13, fontWeight: 500, color, display: 'flex', alignItems: 'center', gap: 6 }}>{icon} {label}</span>
+              <button onClick={() => copiar(texto, key)} style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${copiadoKey === key ? color : '#2a2a2a'}`, background: copiadoKey === key ? `${color}20` : 'transparent', color: copiadoKey === key ? color : '#666', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}>
                 <Copy size={10} /> {copiadoKey === key ? '¡Copiado!' : 'Copiar'}
               </button>
             </div>
-            <p style={{ margin: 0, padding: '12px 14px', fontSize: 13, color: '#999', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
-              {texto}
-            </p>
+            <p style={{ margin: 0, padding: '12px 14px', fontSize: 13, color: '#999', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{texto}</p>
           </div>
         ))}
       </div>
@@ -166,27 +174,21 @@ export default function Dashboard() {
   async function loadShopConfig(userId: string) {
     const { data } = await supabase
       .from('shop_config')
-      .select('codigo_taller, nombre_taller')
+      .select('codigo_taller, nombre_taller, trial_expires_at, plan')
       .eq('user_id', userId)
       .single()
 
     if (data) {
       setShopConfig(data)
       const tallerUrl = `${window.location.origin}/?taller=${data.codigo_taller}`
-      const qrUrl = await QRCode.toDataURL(tallerUrl, {
-        width: 300, margin: 2,
-        color: { dark: '#f0ece3', light: '#111111' }
-      })
+      const qrUrl = await QRCode.toDataURL(tallerUrl, { width: 300, margin: 2, color: { dark: '#f0ece3', light: '#111111' } })
       setQrDataUrl(qrUrl)
     }
   }
 
   async function loadOrders() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false })
     if (!error && data) setOrders(data)
     setLoading(false)
   }
@@ -198,7 +200,7 @@ export default function Dashboard() {
   }
 
   async function handleDeleteOrder(orderId: string) {
-    if (!confirm('¿Estás seguro de que querés eliminar este pedido? Esta acción no se puede deshacer.')) return
+    if (!confirm('¿Estás seguro de que querés eliminar este pedido?')) return
     setDeletingOrder(orderId)
     const { error } = await supabase.from('orders').delete().eq('id', orderId)
     if (!error) {
@@ -217,11 +219,8 @@ export default function Dashboard() {
       if (uploadError) throw uploadError
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName)
       setExtraImages(prev => ({ ...prev, [orderId]: [...(prev[orderId] || []), urlData.publicUrl] }))
-    } catch (err) {
-      alert('Error al subir la imagen')
-    } finally {
-      setUploadingImage(null)
-    }
+    } catch { alert('Error al subir la imagen') }
+    finally { setUploadingImage(null) }
   }
 
   function removeExtraImage(orderId: string, index: number) {
@@ -241,14 +240,9 @@ export default function Dashboard() {
       if (data.success && data.modelUrl) {
         setOrders(prev => prev.map(o => o.id === order.id ? { ...o, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' } : o))
         if (selected?.id === order.id) setSelected(prev => prev ? { ...prev, stl_ia_url: data.modelUrl, stl_taller_url: data.modelUrl, status_3d: 'ready' } : null)
-      } else {
-        alert(`Error: ${data.error || 'No se pudo generar el modelo 3D'}`)
-      }
-    } catch (err) {
-      alert('Error de conexión al generar el modelo 3D')
-    } finally {
-      setGenerating3d(null)
-    }
+      } else { alert(`Error: ${data.error || 'No se pudo generar el modelo 3D'}`) }
+    } catch { alert('Error de conexión al generar el modelo 3D') }
+    finally { setGenerating3d(null) }
   }
 
   async function handleGenerarContenido(order: Order, modo: 'entregado' | 'preventa') {
@@ -257,24 +251,13 @@ export default function Dashboard() {
       const response = await fetch('/api/generate-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.id,
-          serviceType: order.service_type,
-          priceArs: order.price_ars,
-          description: order.ai_analysis?.price_breakdown?.description || '',
-          nombreTaller: shopConfig?.nombre_taller || 'el taller',
-          modo,
-          notes: order.notes || '',
-        }),
+        body: JSON.stringify({ orderId: order.id, serviceType: order.service_type, priceArs: order.price_ars, description: order.ai_analysis?.price_breakdown?.description || '', nombreTaller: shopConfig?.nombre_taller || 'el taller', modo, notes: order.notes || '' }),
       })
       if (!response.ok) throw new Error('Error al generar contenido')
       const data = await response.json()
       setContenidoGenerado(prev => ({ ...prev, [order.id + modo]: data }))
-    } catch (err) {
-      alert('Error al generar el contenido. Intentá de nuevo.')
-    } finally {
-      setGenerandoContenido(null)
-    }
+    } catch { alert('Error al generar el contenido. Intentá de nuevo.') }
+    finally { setGenerandoContenido(null) }
   }
 
   async function handleLogout() {
@@ -307,10 +290,65 @@ export default function Dashboard() {
   const totalRevenue = orders.filter(o => o.status === 'done').reduce((sum, o) => sum + (o.price_ars || 0), 0)
   const tallerUrl = shopConfig ? `${typeof window !== 'undefined' ? window.location.origin : ''}/?taller=${shopConfig.codigo_taller}` : ''
 
+  const diasTrial = diasRestantesTrial(shopConfig?.trial_expires_at)
+  const trialVencido = diasTrial !== null && diasTrial <= 0
+  const enPrueba = diasTrial !== null && diasTrial > 0 && shopConfig?.plan === 'trial'
+  const colorBanner = diasTrial !== null && diasTrial <= 3 ? '#f59e0b' : '#3b82f6'
+  const planActual = PLAN_LABELS[shopConfig?.plan || 'trial']
+
   return (
-    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif", position: 'relative' }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Overlay de bloqueo cuando el trial vence */}
+      {trialVencido && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 20, padding: '48px 40px', maxWidth: 480, width: '100%', textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, background: 'rgba(239,68,68,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <Clock size={28} color="#ef4444" />
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 500, marginBottom: 12 }}>Período de prueba vencido</h2>
+            <p style={{ color: '#666', fontSize: 14, lineHeight: 1.7, marginBottom: 8 }}>
+              Tu período de prueba de 14 días ha finalizado. Para continuar procesando pedidos activá tu plan.
+            </p>
+            <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 12, padding: 16, marginBottom: 28, textAlign: 'left' }}>
+              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px' }}>Planes disponibles</p>
+              {[
+                { nombre: 'Early Adopter', precio: '$5 USD/mes', color: '#a855f7', nota: 'Solo por tiempo limitado' },
+                { nombre: 'Base', precio: '$10 USD/mes + 2% por orden', color: '#3b82f6', nota: 'Hasta 50 pedidos/mes' },
+                { nombre: 'Pro', precio: '$25 USD/mes + 1% por orden', color: '#e85d04', nota: 'Pedidos ilimitados + 3D' },
+              ].map((p, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 2 ? '1px solid #1e1e1e' : 'none' }}>
+                  <div>
+                    <span style={{ fontSize: 13, color: p.color, fontWeight: 500 }}>{p.nombre}</span>
+                    <span style={{ fontSize: 11, color: '#555', marginLeft: 8 }}>{p.nota}</span>
+                  </div>
+                  <span style={{ fontSize: 13, color: '#888', fontFamily: "'DM Mono', monospace" }}>{p.precio}</span>
+                </div>
+              ))}
+            </div>
+            <a href="mailto:fabriq@fabriq.com.ar?subject=Quiero activar mi plan FabriQ" style={{ display: 'inline-block', padding: '14px 32px', borderRadius: 10, background: '#e85d04', color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+              Activar mi plan →
+            </a>
+            <p style={{ color: '#444', fontSize: 12, margin: 0 }}>
+              Contactanos a{' '}
+              <a href="mailto:fabriq@fabriq.com.ar" style={{ color: '#666' }}>fabriq@fabriq.com.ar</a>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Banner trial activo */}
+      {enPrueba && (
+        <div style={{ background: `${colorBanner}12`, borderBottom: `1px solid ${colorBanner}30`, padding: '10px 32px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Clock size={13} color={colorBanner} />
+          <span style={{ fontSize: 13, color: colorBanner }}>
+            <strong>Período de prueba activo</strong> — Te quedan <strong>{diasTrial} día{diasTrial !== 1 ? 's' : ''}</strong>.
+            {diasTrial !== null && diasTrial <= 3 && ' ¡Escribinos a fabriq@fabriq.com.ar para activar tu plan!'}
+          </span>
+        </div>
+      )}
 
       <header style={{ borderBottom: '1px solid #1e1e1e', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -320,6 +358,12 @@ export default function Dashboard() {
           <span style={{ fontWeight: 600 }}>FabriQ</span>
           <span style={{ color: '#444', fontSize: 13 }}>/ Dashboard</span>
           {shopConfig?.nombre_taller && <span style={{ color: '#666', fontSize: 13 }}>· {shopConfig.nombre_taller}</span>}
+          {/* Badge plan */}
+          {planActual && (
+            <span style={{ fontSize: 11, color: planActual.color, background: `${planActual.color}15`, padding: '2px 8px', borderRadius: 20, border: `1px solid ${planActual.color}30` }}>
+              {planActual.label}
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ color: '#666', fontSize: 13 }}>{userEmail}</span>
@@ -343,7 +387,7 @@ export default function Dashboard() {
             <div style={{ flex: 1 }}>
               <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Código de tu taller</p>
               <p style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px', fontFamily: "'DM Mono', monospace", color: '#e85d04', letterSpacing: 4 }}>{shopConfig.codigo_taller}</p>
-              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px', lineHeight: 1.5 }}>Compartí este QR o link con tus clientes. Al escanearlo, van directo a tu cotizadora.</p>
+              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px', lineHeight: 1.5 }}>Compartí este QR o link con tus clientes.</p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={copyLink} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: copied ? 'rgba(74,222,128,0.1)' : 'transparent', color: copied ? '#4ade80' : '#888', cursor: 'pointer', fontSize: 13, fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Copy size={13} /> {copied ? '¡Copiado!' : 'Copiar link'}
@@ -409,22 +453,15 @@ export default function Dashboard() {
                       {order.service_type === '3d' && order.status_3d === 'ready' && (
                         <span style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: 20 }}>3D listo</span>
                       )}
-                      {/* ── NUEVO: indicador de WhatsApp en la lista ── */}
                       {whatsapp && (
-                        <span style={{ fontSize: 11, color: '#25D366', background: 'rgba(37,211,102,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(37,211,102,0.2)' }}>
-                          💬 WA
-                        </span>
+                        <span style={{ fontSize: 11, color: '#25D366', background: 'rgba(37,211,102,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(37,211,102,0.2)' }}>💬 WA</span>
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                       <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: '#e85d04' }}>${order.price_ars?.toLocaleString('es-AR')}</span>
                       <span style={{ fontSize: 12, color: STATUS_LABELS[order.status]?.color || '#888' }}>{STATUS_LABELS[order.status]?.label || order.status}</span>
                       <span style={{ fontSize: 12, color: '#444' }}>{new Date(order.created_at).toLocaleDateString('es-AR')}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); handleDeleteOrder(order.id) }}
-                        disabled={deletingOrder === order.id}
-                        style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '4px 8px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}
-                      >
+                      <button onClick={e => { e.stopPropagation(); handleDeleteOrder(order.id) }} disabled={deletingOrder === order.id} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: 6, padding: '4px 8px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
                         {deletingOrder === order.id ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={11} />}
                       </button>
                     </div>
@@ -461,22 +498,8 @@ export default function Dashboard() {
                             Ver imagen del cliente →
                           </a>
                         )}
-
-                        {/* ── NUEVO: botón WhatsApp ── */}
                         {whatsapp && (
-                          <a
-                            href={`https://wa.me/54${whatsapp}?text=Hola! Te contactamos desde ${shopConfig?.nombre_taller || 'FabriQ'} por tu pedido.`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 6,
-                              padding: '6px 12px', borderRadius: 8,
-                              border: '1px solid rgba(37,211,102,0.3)',
-                              background: 'rgba(37,211,102,0.05)',
-                              color: '#25D366', fontSize: 13, textDecoration: 'none',
-                            }}
-                          >
+                          <a href={`https://wa.me/54${whatsapp}?text=Hola! Te contactamos desde ${shopConfig?.nombre_taller || 'FabriQ'} por tu pedido.`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.05)', color: '#25D366', fontSize: 13, textDecoration: 'none' }}>
                             <MessageCircle size={13} /> WhatsApp {whatsapp}
                           </a>
                         )}
@@ -485,7 +508,7 @@ export default function Dashboard() {
                       {order.service_type === '3d' && !order.stl_ia_url && (
                         <div style={{ marginBottom: 16, padding: 16, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10 }} onClick={e => e.stopPropagation()}>
                           <p style={{ color: '#3b82f6', fontSize: 12, fontWeight: 500, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Imágenes de referencia adicionales</p>
-                          <p style={{ color: '#555', fontSize: 11, margin: '0 0 12px', lineHeight: 1.5 }}>Agregá hasta 5 fotos del objeto desde distintos ángulos para mejorar la calidad del modelo 3D generado.</p>
+                          <p style={{ color: '#555', fontSize: 11, margin: '0 0 12px', lineHeight: 1.5 }}>Agregá hasta 5 fotos para mejorar el modelo 3D.</p>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                             {(extraImages[order.id] || []).map((url, i) => (
                               <div key={i} style={{ position: 'relative', width: 64, height: 64 }}>
@@ -502,14 +525,14 @@ export default function Dashboard() {
                               </label>
                             )}
                           </div>
-                          {(extraImages[order.id] || []).length > 0 && <p style={{ color: '#3b82f6', fontSize: 11, margin: 0 }}>✓ {(extraImages[order.id] || []).length} imagen/es adicional/es agregada/s</p>}
+                          {(extraImages[order.id] || []).length > 0 && <p style={{ color: '#3b82f6', fontSize: 11, margin: 0 }}>✓ {(extraImages[order.id] || []).length} imagen/es adicional/es</p>}
                         </div>
                       )}
 
                       {order.service_type === '3d' && !order.stl_ia_url && (
                         <div style={{ marginBottom: 16 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => handleGenerate3D(order)} disabled={generating3d === order.id} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: generating3d === order.id ? '#1a1a1a' : 'linear-gradient(135deg, #e85d04, #f48c06)', color: generating3d === order.id ? '#444' : '#fff', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: generating3d === order.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {generating3d === order.id ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D... (20-30 seg)</> : <><Cpu size={14} /> Generar modelo 3D con IA {(extraImages[order.id] || []).length > 0 ? `(${1 + (extraImages[order.id] || []).length} imágenes)` : ''}</>}
+                            {generating3d === order.id ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generando modelo 3D...</> : <><Cpu size={14} /> Generar modelo 3D con IA</>}
                           </button>
                         </div>
                       )}
@@ -557,7 +580,6 @@ export default function Dashboard() {
                             {generandoContenido === order.id + 'preventa' ? <><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Generando...</> : <><Sparkles size={12} /> 🚀 Nuevo en venta</>}
                           </button>
                         </div>
-
                         {contenidoGenerado[order.id + 'entregado'] && (
                           <PanelContenido contenido={contenidoGenerado[order.id + 'entregado']} onCerrar={() => setContenidoGenerado(prev => { const n = { ...prev }; delete n[order.id + 'entregado']; return n })} />
                         )}

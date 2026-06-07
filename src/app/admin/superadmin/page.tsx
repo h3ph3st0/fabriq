@@ -13,18 +13,31 @@ type Taller = {
   codigo_taller: string
   estado: string
   moneda: string
-  created_at?: string
-  email?: string
+  trial_expires_at?: string
+  plan?: string
 }
 
 const ESTADO_LABELS: Record<string, { label: string; color: string }> = {
-  pendiente: { label: 'Pendiente', color: '#f59e0b' },
-  activo:    { label: 'Activo',    color: '#4ade80' },
-  bloqueado: { label: 'Bloqueado', color: '#ef4444' },
+  pendiente: { label: 'Pendiente',  color: '#f59e0b' },
+  activo:    { label: 'Activo',     color: '#4ade80' },
+  bloqueado: { label: 'Bloqueado',  color: '#ef4444' },
 }
 
-// Tu user_id de superadmin — reemplazalo con el tuyo de Supabase
-const SUPERADMIN_EMAIL = '87cristhianfam@gmail.com' // ← cambiá esto por tu email real
+const PLAN_LABELS: Record<string, { label: string; color: string; precio: string }> = {
+  trial:         { label: 'Trial',         color: '#888',    precio: 'Gratis 14 días' },
+  early_adopter: { label: 'Early Adopter', color: '#a855f7', precio: '$5 USD/mes' },
+  base:          { label: 'Base',          color: '#3b82f6', precio: '$10 USD/mes + 2%' },
+  pro:           { label: 'Pro',           color: '#e85d04', precio: '$25 USD/mes + 1%' },
+  agency:        { label: 'Agency',        color: '#f59e0b', precio: '$60 USD/mes + 0.5%' },
+}
+
+const SUPERADMIN_EMAIL = 'cristhian@calavera.com' // ← cambiá por tu email real
+
+function diasRestantes(trialExpiresAt?: string): number | null {
+  if (!trialExpiresAt) return null
+  const diff = new Date(trialExpiresAt).getTime() - Date.now()
+  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+}
 
 export default function Superadmin() {
   const router = useRouter()
@@ -32,19 +45,14 @@ export default function Superadmin() {
   const [loading, setLoading] = useState(true)
   const [actualizando, setActualizando] = useState<string | null>(null)
   const [autorizado, setAutorizado] = useState(false)
+  const [cambiandoPlan, setCambiandoPlan] = useState<string | null>(null)
 
   useEffect(() => { checkAuth() }, [])
 
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/admin'); return }
-
-    // Solo el superadmin puede acceder
-    if (session.user.email !== SUPERADMIN_EMAIL) {
-      router.push('/admin/dashboard')
-      return
-    }
-
+    if (session.user.email !== SUPERADMIN_EMAIL) { router.push('/admin/dashboard'); return }
     setAutorizado(true)
     await loadTalleres()
   }
@@ -55,24 +63,48 @@ export default function Superadmin() {
       .from('shop_config')
       .select('*')
       .order('created_at', { ascending: false })
-
     if (!error && data) setTalleres(data)
     setLoading(false)
   }
 
   async function cambiarEstado(userId: string, nuevoEstado: string) {
     setActualizando(userId)
+    const updates: Record<string, unknown> = { estado: nuevoEstado }
+
+    // Al aprobar, setear trial de 14 días y plan trial
+    if (nuevoEstado === 'activo') {
+      const trialExpires = new Date()
+      trialExpires.setDate(trialExpires.getDate() + 14)
+      updates.trial_expires_at = trialExpires.toISOString()
+      updates.plan = 'trial'
+    }
+
     const { error } = await supabase
       .from('shop_config')
-      .update({ estado: nuevoEstado })
+      .update(updates)
       .eq('user_id', userId)
 
     if (!error) {
       setTalleres(prev => prev.map(t =>
-        t.user_id === userId ? { ...t, estado: nuevoEstado } : t
+        t.user_id === userId ? { ...t, ...updates } : t
       ))
     }
     setActualizando(null)
+  }
+
+  async function cambiarPlan(userId: string, nuevoPlan: string) {
+    setCambiandoPlan(userId)
+    const { error } = await supabase
+      .from('shop_config')
+      .update({ plan: nuevoPlan })
+      .eq('user_id', userId)
+
+    if (!error) {
+      setTalleres(prev => prev.map(t =>
+        t.user_id === userId ? { ...t, plan: nuevoPlan } : t
+      ))
+    }
+    setCambiandoPlan(null)
   }
 
   if (!autorizado) return null
@@ -100,18 +132,20 @@ export default function Superadmin() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px' }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 24px' }}>
 
-        {/* Métricas rápidas */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
+        {/* Métricas */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 32 }}>
           {[
             { label: 'Pendientes', value: talleres.filter(t => t.estado === 'pendiente').length, color: '#f59e0b' },
             { label: 'Activos', value: talleres.filter(t => t.estado === 'activo').length, color: '#4ade80' },
-            { label: 'Total talleres', value: talleres.length, color: '#f0ece3' },
+            { label: 'Early Adopter', value: talleres.filter(t => t.plan === 'early_adopter').length, color: '#a855f7' },
+            { label: 'Pro', value: talleres.filter(t => t.plan === 'pro').length, color: '#e85d04' },
+            { label: 'Total', value: talleres.length, color: '#f0ece3' },
           ].map((m, i) => (
-            <div key={i} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: 20 }}>
-              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>{m.label}</p>
-              <p style={{ fontSize: 32, fontWeight: 600, margin: 0, fontFamily: "'DM Mono', monospace", color: m.color }}>{m.value}</p>
+            <div key={i} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '16px' }}>
+              <p style={{ color: '#666', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 6px' }}>{m.label}</p>
+              <p style={{ fontSize: 26, fontWeight: 600, margin: 0, fontFamily: "'DM Mono', monospace", color: m.color }}>{m.value}</p>
             </div>
           ))}
         </div>
@@ -129,89 +163,98 @@ export default function Superadmin() {
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 8 }}>
-            {talleres.map(taller => (
-              <div key={taller.user_id} style={{
-                background: '#111', border: '1px solid #1e1e1e',
-                borderRadius: 10, padding: '16px 20px',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <div>
-                      <p style={{ fontSize: 15, fontWeight: 500, margin: '0 0 4px' }}>{taller.nombre_taller}</p>
-                      <p style={{ fontSize: 12, color: '#555', margin: 0, fontFamily: "'DM Mono', monospace" }}>
-                        {taller.codigo_taller} · {taller.moneda}
-                      </p>
-                    </div>
-                  </div>
+            {talleres.map(taller => {
+              const dias = diasRestantes(taller.trial_expires_at)
+              const trialVencido = dias !== null && dias <= 0
+              const enPrueba = dias !== null && dias > 0
+              const planInfo = PLAN_LABELS[taller.plan || 'trial']
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    {/* Estado actual */}
-                    <span style={{
-                      fontSize: 12, color: ESTADO_LABELS[taller.estado]?.color || '#888',
-                      background: `${ESTADO_LABELS[taller.estado]?.color}15` || '#1a1a1a',
-                      padding: '4px 10px', borderRadius: 20,
-                      border: `1px solid ${ESTADO_LABELS[taller.estado]?.color}30`,
-                    }}>
-                      {ESTADO_LABELS[taller.estado]?.label || taller.estado}
-                    </span>
+              return (
+                <div key={taller.user_id} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
 
-                    {/* Botones de acción */}
-                    {actualizando === taller.user_id ? (
-                      <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
-                    ) : (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {taller.estado !== 'activo' && (
-                          <button
-                            onClick={() => cambiarEstado(taller.user_id, 'activo')}
-                            style={{
-                              padding: '6px 12px', borderRadius: 6,
-                              border: '1px solid rgba(74,222,128,0.3)',
-                              background: 'rgba(74,222,128,0.05)', color: '#4ade80',
-                              fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
-                              display: 'flex', alignItems: 'center', gap: 4,
-                            }}
-                          >
-                            <CheckCircle size={12} /> Aprobar
-                          </button>
+                    {/* Info del taller */}
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 15, fontWeight: 500, margin: '0 0 6px' }}>{taller.nombre_taller}</p>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <p style={{ fontSize: 12, color: '#555', margin: 0, fontFamily: "'DM Mono', monospace" }}>
+                          {taller.codigo_taller} · {taller.moneda}
+                        </p>
+
+                        {/* Badge estado */}
+                        <span style={{ fontSize: 11, color: ESTADO_LABELS[taller.estado]?.color || '#888', background: `${ESTADO_LABELS[taller.estado]?.color}15`, padding: '2px 8px', borderRadius: 20, border: `1px solid ${ESTADO_LABELS[taller.estado]?.color}30` }}>
+                          {ESTADO_LABELS[taller.estado]?.label || taller.estado}
+                        </span>
+
+                        {/* Badge plan */}
+                        <span style={{ fontSize: 11, color: planInfo.color, background: `${planInfo.color}15`, padding: '2px 8px', borderRadius: 20, border: `1px solid ${planInfo.color}30` }}>
+                          {planInfo.label} — {planInfo.precio}
+                        </span>
+
+                        {/* Badge trial */}
+                        {enPrueba && (
+                          <span style={{ fontSize: 11, color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(59,130,246,0.2)' }}>
+                            Trial: {dias} días restantes
+                          </span>
                         )}
-                        {taller.estado !== 'pendiente' && (
-                          <button
-                            onClick={() => cambiarEstado(taller.user_id, 'pendiente')}
-                            style={{
-                              padding: '6px 12px', borderRadius: 6,
-                              border: '1px solid rgba(245,158,11,0.3)',
-                              background: 'rgba(245,158,11,0.05)', color: '#f59e0b',
-                              fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
-                              display: 'flex', alignItems: 'center', gap: 4,
-                            }}
-                          >
-                            <Clock size={12} /> Pendiente
-                          </button>
-                        )}
-                        {taller.estado !== 'bloqueado' && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`¿Bloqueár a ${taller.nombre_taller}?`)) {
-                                cambiarEstado(taller.user_id, 'bloqueado')
-                              }
-                            }}
-                            style={{
-                              padding: '6px 12px', borderRadius: 6,
-                              border: '1px solid rgba(239,68,68,0.3)',
-                              background: 'rgba(239,68,68,0.05)', color: '#ef4444',
-                              fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
-                              display: 'flex', alignItems: 'center', gap: 4,
-                            }}
-                          >
-                            <XCircle size={12} /> Bloquear
-                          </button>
+                        {trialVencido && (
+                          <span style={{ fontSize: 11, color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)' }}>
+                            Trial vencido
+                          </span>
                         )}
                       </div>
-                    )}
+                    </div>
+
+                    {/* Acciones */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
+
+                      {/* Cambiar estado */}
+                      {actualizando === taller.user_id ? (
+                        <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
+                      ) : (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {taller.estado !== 'activo' && (
+                            <button onClick={() => cambiarEstado(taller.user_id, 'activo')} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.05)', color: '#4ade80', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <CheckCircle size={12} /> Aprobar
+                            </button>
+                          )}
+                          {taller.estado !== 'pendiente' && (
+                            <button onClick={() => cambiarEstado(taller.user_id, 'pendiente')} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.05)', color: '#f59e0b', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Clock size={12} /> Pendiente
+                            </button>
+                          )}
+                          {taller.estado !== 'bloqueado' && (
+                            <button onClick={() => { if (confirm(`¿Bloquear a ${taller.nombre_taller}?`)) cambiarEstado(taller.user_id, 'bloqueado') }} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <XCircle size={12} /> Bloquear
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Cambiar plan */}
+                      {taller.estado === 'activo' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 11, color: '#555' }}>Plan:</span>
+                          {cambiandoPlan === taller.user_id ? (
+                            <Loader2 size={14} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
+                          ) : (
+                            <select
+                              value={taller.plan || 'trial'}
+                              onChange={e => cambiarPlan(taller.user_id, e.target.value)}
+                              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#f0ece3', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: 'none' }}
+                            >
+                              {Object.entries(PLAN_LABELS).map(([key, val]) => (
+                                <option key={key} value={key}>{val.label} — {val.precio}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
