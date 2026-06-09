@@ -20,6 +20,7 @@
     "react-dropzone": "^15.0.0",
     "react-qrcode-logo": "^4.1.0",
     "replicate": "^1.4.0",
+    "resend": "^6.12.4",
     "three": "^0.184.0"
   },
   "devDependencies": {

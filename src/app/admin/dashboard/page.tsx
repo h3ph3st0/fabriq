@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X, Sparkles, MessageCircle } from 'lucide-react'
+import { Box, LogOut, Settings, RefreshCw, Clock, CheckCircle, AlertTriangle, Loader2, QrCode, Download, Copy, Cpu, Eye, EyeOff, Trash2, Plus, X, Sparkles, MessageCircle, Send } from 'lucide-react'
 import QRCode from 'qrcode'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useGLTF, Environment } from '@react-three/drei'
@@ -46,10 +46,11 @@ type ContenidoRedes = {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  pending:       { label: 'Pendiente',     color: '#888' },
-  quoted:        { label: 'Cotizado',      color: '#f59e0b' },
-  in_production: { label: 'En producción', color: '#3b82f6' },
-  done:          { label: 'Entregado',     color: '#4ade80' },
+  pending:         { label: 'Pendiente',        color: '#888' },
+  quoted:          { label: 'Cotizado',         color: '#f59e0b' },
+  payment_pending: { label: 'Esperando pago',   color: '#3b82f6' },
+  in_production:   { label: 'En producción',    color: '#8b5cf6' },
+  done:            { label: 'Entregado',         color: '#4ade80' },
 }
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -160,6 +161,8 @@ export default function Dashboard() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [generandoContenido, setGenerandoContenido] = useState<string | null>(null)
   const [contenidoGenerado, setContenidoGenerado] = useState<Record<string, ContenidoRedes>>({})
+  const [enviandoPago, setEnviandoPago] = useState<string | null>(null)
+  const [pagoEnviado, setPagoEnviado] = useState<Record<string, boolean>>({})
 
   useEffect(() => { checkAuth() }, [])
 
@@ -260,6 +263,29 @@ export default function Dashboard() {
     finally { setGenerandoContenido(null) }
   }
 
+  // ── NUEVO: Aprobar pedido y enviar link de pago ──
+  async function handleAprobarYEnviarPago(order: Order) {
+    if (!confirm(`¿Aprobás el pedido de ${order.customer_email} por $${order.price_ars.toLocaleString('es-AR')} ARS y le enviás el link de pago?`)) return
+    setEnviandoPago(order.id)
+    try {
+      const response = await fetch('/api/send-payment-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.id }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        setPagoEnviado(prev => ({ ...prev, [order.id]: true }))
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'payment_pending' } : o))
+        if (selected?.id === order.id) setSelected(prev => prev ? { ...prev, status: 'payment_pending' } : null)
+        alert(`✅ Link de pago enviado a ${order.customer_email}`)
+      } else {
+        alert(`Error: ${data.error}`)
+      }
+    } catch { alert('Error al enviar el link de pago') }
+    finally { setEnviandoPago(null) }
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
     window.location.href = '/admin'
@@ -301,7 +327,7 @@ export default function Dashboard() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Overlay de bloqueo cuando el trial vence */}
+      {/* Overlay trial vencido */}
       {trialVencido && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: 20, padding: '48px 40px', maxWidth: 480, width: '100%', textAlign: 'center' }}>
@@ -309,32 +335,12 @@ export default function Dashboard() {
               <Clock size={28} color="#ef4444" />
             </div>
             <h2 style={{ fontSize: 22, fontWeight: 500, marginBottom: 12 }}>Período de prueba vencido</h2>
-            <p style={{ color: '#666', fontSize: 14, lineHeight: 1.7, marginBottom: 8 }}>
+            <p style={{ color: '#666', fontSize: 14, lineHeight: 1.7, marginBottom: 32 }}>
               Tu período de prueba de 14 días ha finalizado. Para continuar procesando pedidos activá tu plan.
             </p>
-            <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 12, padding: 16, marginBottom: 28, textAlign: 'left' }}>
-              <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px' }}>Planes disponibles</p>
-              {[
-                { nombre: 'Early Adopter', precio: '$5 USD/mes', color: '#a855f7', nota: 'Solo por tiempo limitado' },
-                { nombre: 'Base', precio: '$10 USD/mes + 2% por orden', color: '#3b82f6', nota: 'Hasta 50 pedidos/mes' },
-                { nombre: 'Pro', precio: '$25 USD/mes + 1% por orden', color: '#e85d04', nota: 'Pedidos ilimitados + 3D' },
-              ].map((p, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 2 ? '1px solid #1e1e1e' : 'none' }}>
-                  <div>
-                    <span style={{ fontSize: 13, color: p.color, fontWeight: 500 }}>{p.nombre}</span>
-                    <span style={{ fontSize: 11, color: '#555', marginLeft: 8 }}>{p.nota}</span>
-                  </div>
-                  <span style={{ fontSize: 13, color: '#888', fontFamily: "'DM Mono', monospace" }}>{p.precio}</span>
-                </div>
-              ))}
-            </div>
-            <a href="mailto:fabriq@fabriq.com.ar?subject=Quiero activar mi plan FabriQ" style={{ display: 'inline-block', padding: '14px 32px', borderRadius: 10, background: '#e85d04', color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+            <a href="mailto:fabriq@fabriq.com.ar?subject=Quiero activar mi plan FabriQ" style={{ display: 'inline-block', padding: '14px 32px', borderRadius: 10, background: '#e85d04', color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>
               Activar mi plan →
             </a>
-            <p style={{ color: '#444', fontSize: 12, margin: 0 }}>
-              Contactanos a{' '}
-              <a href="mailto:fabriq@fabriq.com.ar" style={{ color: '#666' }}>fabriq@fabriq.com.ar</a>
-            </p>
           </div>
         </div>
       )}
@@ -345,7 +351,7 @@ export default function Dashboard() {
           <Clock size={13} color={colorBanner} />
           <span style={{ fontSize: 13, color: colorBanner }}>
             <strong>Período de prueba activo</strong> — Te quedan <strong>{diasTrial} día{diasTrial !== 1 ? 's' : ''}</strong>.
-            {diasTrial !== null && diasTrial <= 3 && ' ¡Escribinos a fabriq@fabriq.com.ar para activar tu plan!'}
+            {diasTrial !== null && diasTrial <= 3 && ' ¡Escribinos para activar tu plan!'}
           </span>
         </div>
       )}
@@ -358,7 +364,6 @@ export default function Dashboard() {
           <span style={{ fontWeight: 600 }}>FabriQ</span>
           <span style={{ color: '#444', fontSize: 13 }}>/ Dashboard</span>
           {shopConfig?.nombre_taller && <span style={{ color: '#666', fontSize: 13 }}>· {shopConfig.nombre_taller}</span>}
-          {/* Badge plan */}
           {planActual && (
             <span style={{ fontSize: 11, color: planActual.color, background: `${planActual.color}15`, padding: '2px 8px', borderRadius: 20, border: `1px solid ${planActual.color}30` }}>
               {planActual.label}
@@ -387,7 +392,7 @@ export default function Dashboard() {
             <div style={{ flex: 1 }}>
               <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px' }}>Código de tu taller</p>
               <p style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px', fontFamily: "'DM Mono', monospace", color: '#e85d04', letterSpacing: 4 }}>{shopConfig.codigo_taller}</p>
-              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px', lineHeight: 1.5 }}>Compartí este QR o link con tus clientes.</p>
+              <p style={{ color: '#555', fontSize: 12, margin: '0 0 20px' }}>Compartí este QR o link con tus clientes.</p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={copyLink} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: copied ? 'rgba(74,222,128,0.1)' : 'transparent', color: copied ? '#4ade80' : '#888', cursor: 'pointer', fontSize: 13, fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Copy size={13} /> {copied ? '¡Copiado!' : 'Copiar link'}
@@ -404,8 +409,8 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
           {[
             { label: 'Total órdenes', value: orders.length, color: '#f0ece3' },
-            { label: 'En producción', value: orders.filter(o => o.status === 'in_production').length, color: '#3b82f6' },
-            { label: 'Entregadas', value: orders.filter(o => o.status === 'done').length, color: '#4ade80' },
+            { label: 'Esperando pago', value: orders.filter(o => o.status === 'payment_pending').length, color: '#3b82f6' },
+            { label: 'En producción', value: orders.filter(o => o.status === 'in_production').length, color: '#8b5cf6' },
             { label: 'Revenue total', value: `$${totalRevenue.toLocaleString('es-AR')}`, color: '#e85d04' },
           ].map((m, i) => (
             <div key={i} style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px' }}>
@@ -435,6 +440,8 @@ export default function Dashboard() {
           <div style={{ display: 'grid', gap: 8 }}>
             {orders.map(order => {
               const whatsapp = extraerWhatsApp(order.notes)
+              const esCotizado = order.status === 'quoted'
+
               return (
                 <div key={order.id}
                   onClick={(e) => {
@@ -442,7 +449,7 @@ export default function Dashboard() {
                     if (target.closest('canvas') || target.tagName === 'CANVAS' || target.closest('button') || target.closest('input')) return
                     setSelected(selected?.id === order.id ? null : order)
                   }}
-                  style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                  style={{ background: selected?.id === order.id ? '#161616' : '#111', border: `1px solid ${esCotizado ? 'rgba(232,93,4,0.3)' : selected?.id === order.id ? '#2a2a2a' : '#1e1e1e'}`, borderRadius: 10, padding: '16px 20px', cursor: 'pointer', transition: 'all 0.15s' }}>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -455,6 +462,12 @@ export default function Dashboard() {
                       )}
                       {whatsapp && (
                         <span style={{ fontSize: 11, color: '#25D366', background: 'rgba(37,211,102,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(37,211,102,0.2)' }}>💬 WA</span>
+                      )}
+                      {/* Badge de acción requerida */}
+                      {esCotizado && (
+                        <span style={{ fontSize: 11, color: '#e85d04', background: 'rgba(232,93,4,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(232,93,4,0.3)' }}>
+                          ⚡ Requiere aprobación
+                        </span>
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -505,10 +518,32 @@ export default function Dashboard() {
                         )}
                       </div>
 
+                      {/* ── NUEVO: Botón aprobar y enviar link de pago ── */}
+                      {esCotizado && (
+                        <div style={{ marginBottom: 16, padding: 16, background: 'rgba(232,93,4,0.05)', border: '1px solid rgba(232,93,4,0.2)', borderRadius: 10 }} onClick={e => e.stopPropagation()}>
+                          <p style={{ color: '#e85d04', fontSize: 13, fontWeight: 500, margin: '0 0 8px' }}>⚡ Pedido pendiente de aprobación</p>
+                          <p style={{ color: '#888', fontSize: 12, margin: '0 0 12px', lineHeight: 1.6 }}>
+                            Revisá el pedido y si todo está bien aprobalo. El cliente va a recibir el link de pago automáticamente por email.
+                          </p>
+                          <button
+                            onClick={() => handleAprobarYEnviarPago(order)}
+                            disabled={enviandoPago === order.id || pagoEnviado[order.id]}
+                            style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: pagoEnviado[order.id] ? 'rgba(74,222,128,0.1)' : enviandoPago === order.id ? '#1a1a1a' : '#e85d04', color: pagoEnviado[order.id] ? '#4ade80' : enviandoPago === order.id ? '#444' : '#fff', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: enviandoPago === order.id || pagoEnviado[order.id] ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                          >
+                            {enviandoPago === order.id ? (
+                              <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Enviando...</>
+                            ) : pagoEnviado[order.id] ? (
+                              <><CheckCircle size={14} /> Link enviado</>
+                            ) : (
+                              <><Send size={14} /> Aprobar y enviar link de pago</>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
                       {order.service_type === '3d' && !order.stl_ia_url && (
                         <div style={{ marginBottom: 16, padding: 16, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10 }} onClick={e => e.stopPropagation()}>
                           <p style={{ color: '#3b82f6', fontSize: 12, fontWeight: 500, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Imágenes de referencia adicionales</p>
-                          <p style={{ color: '#555', fontSize: 11, margin: '0 0 12px', lineHeight: 1.5 }}>Agregá hasta 5 fotos para mejorar el modelo 3D.</p>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                             {(extraImages[order.id] || []).map((url, i) => (
                               <div key={i} style={{ position: 'relative', width: 64, height: 64 }}>
@@ -525,7 +560,6 @@ export default function Dashboard() {
                               </label>
                             )}
                           </div>
-                          {(extraImages[order.id] || []).length > 0 && <p style={{ color: '#3b82f6', fontSize: 11, margin: 0 }}>✓ {(extraImages[order.id] || []).length} imagen/es adicional/es</p>}
                         </div>
                       )}
 
@@ -556,7 +590,7 @@ export default function Dashboard() {
 
                       <div style={{ marginBottom: 16 }}>
                         <p style={{ color: '#666', fontSize: 12, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cambiar estado</p>
-                        <div style={{ display: 'flex', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           {Object.entries(STATUS_LABELS).map(([key, val]) => (
                             <button key={key} type="button" onClick={e => { e.stopPropagation(); updateStatus(order.id, key) }} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: order.status === key ? '#1e1e1e' : 'transparent', color: order.status === key ? val.color : '#555', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: order.status === key ? `1px solid ${val.color}` : '1px solid #2a2a2a' }}>
                               {order.status === key && <CheckCircle size={10} style={{ marginRight: 4, display: 'inline' }} />}

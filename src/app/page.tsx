@@ -3,10 +3,10 @@ import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { supabase } from '@/lib/supabase'
 import { analyzeFileWithGemini, GeminiAnalysis } from '@/lib/gemini'
-import { Upload, CheckCircle, AlertTriangle, Loader2, ChevronRight, Box, Info } from 'lucide-react'
+import { Upload, CheckCircle, AlertTriangle, Loader2, ChevronRight, Box, Info, Clock } from 'lucide-react'
 
 type ServiceType = 'dtf' | '3d' | 'sublimacion'
-type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'fotos3d' | 'redirecting' | 'done'
+type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'fotos3d' | 'esperando' | 'done'
 
 const SERVICE_LABELS: Record<ServiceType, string> = {
   dtf: 'DTF — Remeras y telas',
@@ -57,14 +57,20 @@ export default function Home() {
   const [tallerCodigo, setTallerCodigo] = useState<string | null>(null)
   const [aceptaTerminos, setAceptaTerminos] = useState(false)
   const [tallerUserId, setTallerUserId] = useState<string | null>(null)
+  const [tallerNombre, setTallerNombre] = useState<string>('')
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const codigo = params.get('taller')
     if (codigo) {
       setTallerCodigo(codigo)
-      supabase.from('shop_config').select('user_id').eq('codigo_taller', codigo).single()
-        .then(({ data }) => { if (data) setTallerUserId(data.user_id) })
+      supabase.from('shop_config').select('user_id, nombre_taller').eq('codigo_taller', codigo).single()
+        .then(({ data }) => {
+          if (data) {
+            setTallerUserId(data.user_id)
+            setTallerNombre(data.nombre_taller)
+          }
+        })
     }
   }, [])
 
@@ -146,30 +152,19 @@ export default function Home() {
 
       if (orderError) throw orderError
       setOrderId(order.id)
-      if (serviceType === '3d') { setStep('fotos3d'); return }
-      await redirectToPayment(order.id)
+
+      // Para 3D primero pedimos fotos adicionales
+      if (serviceType === '3d') {
+        setStep('fotos3d')
+        return
+      }
+
+      // Para DTF y sublimación va directo a espera de aprobación
+      setStep('esperando')
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el pedido')
     } finally { setSubmitting(false) }
-  }
-
-  async function redirectToPayment(oid: string) {
-    if (!analysis) return
-    setStep('redirecting')
-    try {
-      const serviceLabel = soporte ? `${SERVICE_LABELS[serviceType]} — ${soporte}` : SERVICE_LABELS[serviceType]
-      const description = `FabriQ - ${serviceLabel}${parseInt(cantidad) > 1 ? ` x${cantidad}` : ''}`
-      const response = await fetch('/api/create-payment', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: oid, amount: analysis.price_breakdown.total_ars, description, email }),
-      })
-      if (!response.ok) throw new Error('Error al crear el pago')
-      const { initPoint } = await response.json()
-      window.location.href = initPoint
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al procesar el pago')
-      setStep('form')
-    }
   }
 
   async function handleUploadFoto3d(file: File) {
@@ -337,16 +332,13 @@ export default function Home() {
             </div>
           )}
 
-          {/* PASO: RESULTADO — simplificado y amigable */}
+          {/* PASO: RESULTADO */}
           {step === 'result' && analysis && (
             <div>
-              {/* Encabezado */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
                 <CheckCircle size={28} color="#4ade80" />
                 <div>
-                  <h2 style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>
-                    ¡Tu pedido está listo para cotizar!
-                  </h2>
+                  <h2 style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>¡Tu pedido está listo para cotizar!</h2>
                   <p style={{ color: '#666', fontSize: 13, margin: '4px 0 0' }}>
                     {SERVICE_LABELS[serviceType]}{soporte ? ` — ${soporte}` : ''}
                     {altura && ` · ${altura}cm alto`}{ancho && ` × ${ancho}cm`}
@@ -355,7 +347,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Precio */}
               <div style={{ background: 'rgba(17,17,17,0.9)', border: '1px solid #2a2a2a', borderRadius: 12, padding: '24px', marginBottom: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                   <div>
@@ -372,7 +363,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Alerta de copyright — tono informativo */}
               {analysis.copyright_alert && (
                 <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '16px', marginBottom: 16, display: 'flex', gap: 12 }}>
                   <Info size={18} color="#f59e0b" style={{ flexShrink: 0, marginTop: 2 }} />
@@ -385,10 +375,9 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Recomendaciones — solo si hay y en lenguaje simple */}
               {analysis.recommendations.length > 0 && (
                 <div style={{ marginBottom: 24, padding: '16px', background: 'rgba(17,17,17,0.6)', border: '1px solid #1e1e1e', borderRadius: 10 }}>
-                  <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10, margin: '0 0 10px' }}>
+                  <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 10px' }}>
                     💡 Consejos para un mejor resultado
                   </p>
                   {analysis.recommendations.slice(0, 2).map((rec, i) => (
@@ -415,10 +404,18 @@ export default function Home() {
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 400, marginBottom: 8 }}>Confirmar pedido</h2>
               <p style={{ color: '#666', fontSize: 14, marginBottom: 32 }}>
-                Precio final: <strong style={{ color: '#e85d04', fontFamily: "'DM Mono', monospace" }}>${analysis?.price_breakdown.total_ars.toLocaleString('es-AR')} ARS</strong>
+                Precio estimado: <strong style={{ color: '#e85d04', fontFamily: "'DM Mono', monospace" }}>${analysis?.price_breakdown.total_ars.toLocaleString('es-AR')} ARS</strong>
                 {soporte && <span style={{ color: '#666' }}> · {soporte}</span>}
                 {parseInt(cantidad) > 1 && <span style={{ color: '#666' }}> · {cantidad} unidades</span>}
               </p>
+
+              {/* Aviso del nuevo flujo */}
+              <div style={{ marginBottom: 24, padding: '16px', background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 10, display: 'flex', gap: 12 }}>
+                <Clock size={18} color="#3b82f6" style={{ flexShrink: 0, marginTop: 2 }} />
+                <p style={{ color: '#3b82f6', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                  Una vez que confirmes el pedido, el taller lo va a revisar y te va a enviar el link de pago a tu email en menos de 24hs.
+                </p>
+              </div>
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Email *</label>
@@ -456,7 +453,7 @@ export default function Home() {
               <div style={{ display: 'flex', gap: 12 }}>
                 <button onClick={() => setStep('result')} style={{ flex: 1, padding: '14px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>Volver</button>
                 <button onClick={handleSubmitOrder} disabled={!puedeConfirmar} style={{ flex: 2, padding: '14px', borderRadius: 10, border: 'none', background: puedeConfirmar ? '#e85d04' : '#1a1a1a', color: puedeConfirmar ? '#fff' : '#444', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: puedeConfirmar ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }}>
-                  {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Ir a pagar <ChevronRight size={16} /></>}
+                  {submitting ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</> : <>Enviar pedido <ChevronRight size={16} /></>}
                 </button>
               </div>
             </div>
@@ -485,35 +482,49 @@ export default function Home() {
                 )}
               </div>
               <p style={{ color: '#555', fontSize: 12, marginBottom: 24 }}>{fotos3d.length > 0 ? `✓ ${fotos3d.length} foto/s agregada/s` : 'Sin fotos adicionales por ahora'}</p>
-              <button onClick={() => orderId && redirectToPayment(orderId)} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: '#e85d04', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>
-                {fotos3d.length > 0 ? 'Listo, ir a pagar →' : 'Continuar y pagar →'}
+              <button onClick={() => setStep('esperando')} style={{ padding: '14px 32px', borderRadius: 10, border: 'none', background: '#e85d04', color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>
+                {fotos3d.length > 0 ? 'Listo, enviar pedido →' : 'Continuar →'}
               </button>
             </div>
           )}
 
-          {/* PASO: REDIRIGIENDO */}
-          {step === 'redirecting' && (
-            <div style={{ textAlign: 'center', padding: '80px 0' }}>
-              <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
-              <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Preparando tu pago...</h2>
-              <p style={{ color: '#666', fontSize: 14 }}>Te estamos redirigiendo a MercadoPago de forma segura</p>
-            </div>
-          )}
-
-          {/* PASO: DONE */}
-          {step === 'done' && (
+          {/* PASO: ESPERANDO APROBACIÓN */}
+          {step === 'esperando' && (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
-              <div style={{ width: 72, height: 72, background: 'rgba(74,222,128,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
-                <CheckCircle size={36} color="#4ade80" />
+              <div style={{ width: 72, height: 72, background: 'rgba(59,130,246,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(59,130,246,0.2)' }}>
+                <Clock size={36} color="#3b82f6" />
               </div>
-              <h2 style={{ fontSize: 26, fontWeight: 400, marginBottom: 8 }}>¡Todo listo!</h2>
-              <p style={{ color: '#666', fontSize: 14, marginBottom: 8 }}>Te contactaremos a <strong style={{ color: '#888' }}>{email}</strong> para coordinar el pago.</p>
-              {orderId && <p style={{ color: '#444', fontSize: 12, fontFamily: "'DM Mono', monospace", marginBottom: 32 }}>Orden #{orderId.slice(0, 8).toUpperCase()}</p>}
+              <h2 style={{ fontSize: 26, fontWeight: 400, marginBottom: 8 }}>¡Pedido recibido!</h2>
+              <p style={{ color: '#888', fontSize: 15, marginBottom: 8, lineHeight: 1.7 }}>
+                {tallerNombre || 'El taller'} va a revisar tu pedido y te va a enviar el link de pago a<br />
+                <strong style={{ color: '#f0ece3' }}>{email}</strong>
+              </p>
+              <p style={{ color: '#555', fontSize: 13, marginBottom: 32 }}>Tiempo de respuesta estimado: menos de 24hs</p>
+
+              <div style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 12, padding: '20px', marginBottom: 32, textAlign: 'left', maxWidth: 400, margin: '0 auto 32px' }}>
+                <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px' }}>Resumen del pedido</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ color: '#888', fontSize: 13 }}>Servicio</span>
+                  <span style={{ color: '#f0ece3', fontSize: 13 }}>{SERVICE_LABELS[serviceType]}{soporte ? ` — ${soporte}` : ''}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ color: '#888', fontSize: 13 }}>Precio estimado</span>
+                  <span style={{ color: '#e85d04', fontSize: 13, fontFamily: "'DM Mono', monospace" }}>${analysis?.price_breakdown.total_ars.toLocaleString('es-AR')} ARS</span>
+                </div>
+                {orderId && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#888', fontSize: 13 }}>N° de pedido</span>
+                    <span style={{ color: '#555', fontSize: 12, fontFamily: "'DM Mono', monospace" }}>#{orderId.slice(0, 8).toUpperCase()}</span>
+                  </div>
+                )}
+              </div>
+
               <button onClick={reset} style={{ padding: '14px 32px', borderRadius: 10, border: '1px solid #2a2a2a', background: 'transparent', color: '#888', fontSize: 14, fontFamily: "'DM Sans', sans-serif", cursor: 'pointer' }}>
                 Hacer otro pedido
               </button>
             </div>
           )}
+
         </div>
 
         <footer style={{ borderTop: '1px solid #1a1a1a', padding: '20px 40px', textAlign: 'center', background: 'rgba(10,10,10,0.8)' }}>
