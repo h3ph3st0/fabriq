@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { supabase } from '@/lib/supabase'
 import { analyzeFileWithGemini, GeminiAnalysis } from '@/lib/gemini'
-import { Upload, CheckCircle, XCircle, AlertTriangle, Loader2, ChevronRight, Box } from 'lucide-react'
+import { Upload, CheckCircle, AlertTriangle, Loader2, ChevronRight, Box, Info } from 'lucide-react'
 
 type ServiceType = 'dtf' | '3d' | 'sublimacion'
 type Step = 'upload' | 'analyzing' | 'result' | 'form' | 'fotos3d' | 'redirecting' | 'done'
@@ -14,65 +14,32 @@ const SERVICE_LABELS: Record<ServiceType, string> = {
   sublimacion: 'Sublimación'
 }
 
-// ── NUEVO: soportes por servicio ──
 const SOPORTES_DTF = [
-  'Remera',
-  'Buzo / Hoodie',
-  'Gorra',
-  'Bolsa / Tote bag',
-  'Ropa deportiva',
-  'Uniforme / Ropa de trabajo',
-  'Parche',
-  'Calco / Sticker textil',
-  'Otro',
+  'Remera', 'Buzo / Hoodie', 'Gorra', 'Bolsa / Tote bag',
+  'Ropa deportiva', 'Uniforme / Ropa de trabajo', 'Parche', 'Calco / Sticker textil', 'Otro',
 ]
 
 const SOPORTES_SUBLIMACION = [
-  // Textil
-  'Remera de poliéster',
-  'Buzo de poliéster',
-  'Gorra',
-  'Toalla',
-  'Delantal',
-  'Medias',
-  // Rígidos
-  'Taza',
-  'Termo / Botella',
-  'Mousepad',
-  'Chapa / Placa',
-  'Puzzle',
-  'Portarretratos',
-  'Llavero',
-  'Otro',
+  'Remera de poliéster', 'Buzo de poliéster', 'Gorra', 'Toalla', 'Delantal', 'Medias',
+  'Taza', 'Termo / Botella', 'Mousepad', 'Chapa / Placa', 'Puzzle', 'Portarretratos', 'Llavero', 'Otro',
 ]
-// ─────────────────────────────────
 
 const inputStyle = {
-  width: '100%',
-  padding: '12px 16px',
-  background: '#111',
-  border: '1px solid #2a2a2a',
-  borderRadius: 10,
-  color: '#f0ece3',
-  fontSize: 15,
-  fontFamily: "'DM Sans', sans-serif",
-  outline: 'none',
+  width: '100%', padding: '12px 16px', background: '#111',
+  border: '1px solid #2a2a2a', borderRadius: 10, color: '#f0ece3',
+  fontSize: 15, fontFamily: "'DM Sans', sans-serif", outline: 'none',
   boxSizing: 'border-box' as const,
 }
 
 const labelStyle = {
-  fontSize: 12,
-  color: '#666',
-  letterSpacing: '0.5px',
-  textTransform: 'uppercase' as const,
-  display: 'block',
-  marginBottom: 8,
+  fontSize: 12, color: '#666', letterSpacing: '0.5px',
+  textTransform: 'uppercase' as const, display: 'block', marginBottom: 8,
 }
 
 export default function Home() {
   const [step, setStep] = useState<Step>('upload')
   const [serviceType, setServiceType] = useState<ServiceType>('dtf')
-  const [soporte, setSoporte] = useState<string>('') // ── NUEVO
+  const [soporte, setSoporte] = useState<string>('')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<GeminiAnalysis | null>(null)
@@ -96,23 +63,14 @@ export default function Home() {
     const codigo = params.get('taller')
     if (codigo) {
       setTallerCodigo(codigo)
-      supabase
-        .from('shop_config')
-        .select('user_id')
-        .eq('codigo_taller', codigo)
-        .single()
+      supabase.from('shop_config').select('user_id').eq('codigo_taller', codigo).single()
         .then(({ data }) => { if (data) setTallerUserId(data.user_id) })
     }
   }, [])
 
-  // ── Resetear soporte cuando cambia el servicio ──
   useEffect(() => { setSoporte('') }, [serviceType])
 
-  const soportesDisponibles = serviceType === 'dtf'
-    ? SOPORTES_DTF
-    : serviceType === 'sublimacion'
-    ? SOPORTES_SUBLIMACION
-    : []
+  const soportesDisponibles = serviceType === 'dtf' ? SOPORTES_DTF : serviceType === 'sublimacion' ? SOPORTES_SUBLIMACION : []
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const f = acceptedFiles[0]
@@ -133,7 +91,6 @@ export default function Home() {
 
   async function handleAnalyze() {
     if (!file) return
-    // Validar que haya elegido soporte para DTF y sublimación
     if ((serviceType === 'dtf' || serviceType === 'sublimacion') && !soporte) {
       setError('Por favor seleccioná el tipo de producto antes de continuar.')
       return
@@ -152,7 +109,7 @@ export default function Home() {
         ancho ? parseFloat(ancho) : undefined,
         cantidad ? parseInt(cantidad) : 1,
         tallerCodigo || undefined,
-        soporte || undefined  // ── NUEVO
+        soporte || undefined
       )
       setAnalysis(result); setStep('result')
     } catch (err) {
@@ -181,23 +138,15 @@ export default function Home() {
       ].filter(Boolean).join(' | ')
 
       const { data: order, error: orderError } = await supabase.from('orders').insert({
-        customer_email: email,
-        file_name: file.name,
-        file_url: urlData.publicUrl,
-        service_type: serviceType,
-        ai_analysis: analysis,
+        customer_email: email, file_name: file.name, file_url: urlData.publicUrl,
+        service_type: serviceType, ai_analysis: analysis,
         price_ars: analysis.price_breakdown.total_ars,
-        status: 'quoted',
-        notes: notasCompletas,
-        user_id: tallerUserId || null,
+        status: 'quoted', notes: notasCompletas, user_id: tallerUserId || null,
       }).select().single()
 
       if (orderError) throw orderError
       setOrderId(order.id)
-      if (serviceType === '3d') {
-        setStep('fotos3d')
-        return
-      }
+      if (serviceType === '3d') { setStep('fotos3d'); return }
       await redirectToPayment(order.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el pedido')
@@ -211,8 +160,7 @@ export default function Home() {
       const serviceLabel = soporte ? `${SERVICE_LABELS[serviceType]} — ${soporte}` : SERVICE_LABELS[serviceType]
       const description = `FabriQ - ${serviceLabel}${parseInt(cantidad) > 1 ? ` x${cantidad}` : ''}`
       const response = await fetch('/api/create-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: oid, amount: analysis.price_breakdown.total_ars, description, email }),
       })
       if (!response.ok) throw new Error('Error al crear el pago')
@@ -281,7 +229,6 @@ export default function Home() {
                 Subí tu diseño, la IA analiza viabilidad técnica y genera el precio al instante.
               </p>
 
-              {/* Selector de servicio */}
               <div style={{ marginBottom: 24 }}>
                 <label style={labelStyle}>Tipo de servicio</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -291,8 +238,7 @@ export default function Home() {
                       border: serviceType === s ? '1px solid #e85d04' : '1px solid #2a2a2a',
                       background: serviceType === s ? 'rgba(232,93,4,0.1)' : '#111',
                       color: serviceType === s ? '#e85d04' : '#888',
-                      cursor: 'pointer', fontSize: 13,
-                      fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s',
+                      cursor: 'pointer', fontSize: 13, fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s',
                     }}>
                       {SERVICE_LABELS[s]}
                     </button>
@@ -300,7 +246,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* ── NUEVO: Selector de soporte (solo para DTF y sublimación) ── */}
               {soportesDisponibles.length > 0 && (
                 <div style={{ marginBottom: 24 }}>
                   <label style={labelStyle}>
@@ -314,8 +259,7 @@ export default function Home() {
                         border: soporte === s ? '1px solid #e85d04' : '1px solid #2a2a2a',
                         background: soporte === s ? 'rgba(232,93,4,0.1)' : '#0f0f0f',
                         color: soporte === s ? '#e85d04' : '#666',
-                        cursor: 'pointer', fontSize: 12,
-                        fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s',
+                        cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s',
                       }}>
                         {s}
                       </button>
@@ -328,9 +272,7 @@ export default function Home() {
                   )}
                 </div>
               )}
-              {/* ─────────────────────────────────────────────────────────── */}
 
-              {/* Medidas */}
               <div style={{ marginBottom: 28 }}>
                 <label style={labelStyle}>Medidas del producto final</label>
                 <div style={{ display: 'flex', gap: 12 }}>
@@ -347,7 +289,6 @@ export default function Home() {
                 <p style={{ color: '#444', fontSize: 11, marginTop: 6 }}>Las medidas permiten calcular el precio con mayor precisión</p>
               </div>
 
-              {/* Dropzone */}
               <div {...getRootProps()} style={{
                 border: `2px dashed ${isDragActive ? '#e85d04' : file ? '#2a6b2a' : '#2a2a2a'}`,
                 borderRadius: 16, padding: '48px 24px', textAlign: 'center', cursor: 'pointer',
@@ -391,19 +332,20 @@ export default function Home() {
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
               <Loader2 size={48} color="#e85d04" style={{ animation: 'spin 1s linear infinite', marginBottom: 24 }} />
               <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>Analizando tu diseño...</h2>
-              <p style={{ color: '#666', fontSize: 14 }}>Gemini está evaluando viabilidad técnica y calculando el precio</p>
-              {soporte && <p style={{ color: '#555', fontSize: 13, marginTop: 8 }}>Soporte: {soporte}</p>}
+              <p style={{ color: '#666', fontSize: 14 }}>Estamos calculando el precio y evaluando tu pedido</p>
+              {soporte && <p style={{ color: '#555', fontSize: 13, marginTop: 8 }}>Producto: {soporte}</p>}
             </div>
           )}
 
-          {/* PASO: RESULTADO */}
+          {/* PASO: RESULTADO — simplificado y amigable */}
           {step === 'result' && analysis && (
             <div>
+              {/* Encabezado */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
-                {analysis.viable ? <CheckCircle size={28} color="#4ade80" /> : <XCircle size={28} color="#ef4444" />}
+                <CheckCircle size={28} color="#4ade80" />
                 <div>
                   <h2 style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>
-                    {analysis.viable ? 'Diseño viable para producción' : 'Se requieren ajustes'}
+                    ¡Tu pedido está listo para cotizar!
                   </h2>
                   <p style={{ color: '#666', fontSize: 13, margin: '4px 0 0' }}>
                     {SERVICE_LABELS[serviceType]}{soporte ? ` — ${soporte}` : ''}
@@ -413,6 +355,7 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Precio */}
               <div style={{ background: 'rgba(17,17,17,0.9)', border: '1px solid #2a2a2a', borderRadius: 12, padding: '24px', marginBottom: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                   <div>
@@ -429,34 +372,29 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Alerta de copyright — tono informativo */}
               {analysis.copyright_alert && (
-                <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '16px', marginBottom: 16, display: 'flex', gap: 12 }}>
-                  <AlertTriangle size={18} color="#f59e0b" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10, padding: '16px', marginBottom: 16, display: 'flex', gap: 12 }}>
+                  <Info size={18} color="#f59e0b" style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
-                    <p style={{ color: '#f59e0b', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>Alerta de propiedad intelectual</p>
-                    <p style={{ color: '#a07020', fontSize: 12, margin: 0, lineHeight: 1.5 }}>{analysis.copyright_notes}</p>
+                    <p style={{ color: '#f59e0b', fontSize: 13, fontWeight: 500, margin: '0 0 4px' }}>Aviso sobre el diseño</p>
+                    <p style={{ color: '#a07020', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                      Este diseño podría estar protegido por derechos de autor. El taller te va a contactar para confirmar los detalles antes de producirlo. Podés continuar con el pedido normalmente.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {analysis.issues.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ color: '#888', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Problemas detectados</p>
-                  {analysis.issues.map((issue, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, padding: '8px 12px', background: 'rgba(17,17,17,0.9)', borderRadius: 6, marginBottom: 4, fontSize: 13, color: '#ef4444' }}>
-                      <span>•</span> {issue}
-                    </div>
-                  ))}
-                </div>
-              )}
-
+              {/* Recomendaciones — solo si hay y en lenguaje simple */}
               {analysis.recommendations.length > 0 && (
-                <div style={{ marginBottom: 24 }}>
-                  <p style={{ color: '#888', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Recomendaciones</p>
-                  {analysis.recommendations.map((rec, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, padding: '8px 12px', background: 'rgba(17,17,17,0.9)', borderRadius: 6, marginBottom: 4, fontSize: 13, color: '#4ade80' }}>
-                      <span>✓</span> {rec}
-                    </div>
+                <div style={{ marginBottom: 24, padding: '16px', background: 'rgba(17,17,17,0.6)', border: '1px solid #1e1e1e', borderRadius: 10 }}>
+                  <p style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10, margin: '0 0 10px' }}>
+                    💡 Consejos para un mejor resultado
+                  </p>
+                  {analysis.recommendations.slice(0, 2).map((rec, i) => (
+                    <p key={i} style={{ fontSize: 13, color: '#888', margin: i === 0 ? '8px 0 6px' : '6px 0 0', lineHeight: 1.6 }}>
+                      · {rec}
+                    </p>
                   ))}
                 </div>
               )}
@@ -531,7 +469,9 @@ export default function Home() {
                 <Box size={28} color="#3b82f6" />
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 400, marginBottom: 8 }}>¡Pedido recibido!</h2>
-              <p style={{ color: '#888', fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>Para mejorar la calidad del modelo 3D podés agregar hasta 5 fotos adicionales del objeto desde distintos ángulos.</p>
+              <p style={{ color: '#888', fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>
+                Para mejorar la calidad del modelo 3D podés agregar hasta 5 fotos adicionales del objeto desde distintos ángulos.
+              </p>
               <p style={{ color: '#555', fontSize: 12, marginBottom: 32 }}>Esto es opcional pero mejora mucho el resultado final.</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 24 }}>
                 {fotos3d.map((url, i) => (
