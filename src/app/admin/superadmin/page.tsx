@@ -32,8 +32,6 @@ const PLAN_LABELS: Record<string, { label: string; color: string; precio: string
   agency:        { label: 'Agency',        color: '#f59e0b', precio: '$60 USD/mes + 0.5%' },
 }
 
-const SUPERADMIN_EMAIL = '87cristhianfam@gmail.com'
-
 function diasRestantes(trialExpiresAt?: string): number | null {
   if (!trialExpiresAt) return null
   const diff = new Date(trialExpiresAt).getTime() - Date.now()
@@ -54,7 +52,22 @@ export default function Superadmin() {
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/admin'); return }
-    if (session.user.email !== SUPERADMIN_EMAIL) { router.push('/admin/dashboard'); return }
+
+    // ── Verificar en el servidor, no solo en el cliente ──
+    try {
+      const response = await fetch('/api/verify-superadmin', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      })
+      const { authorized } = await response.json()
+      if (!authorized) {
+        router.push('/admin/dashboard')
+        return
+      }
+    } catch {
+      router.push('/admin/dashboard')
+      return
+    }
+
     setAutorizado(true)
     await loadTalleres()
   }
@@ -107,7 +120,12 @@ export default function Superadmin() {
     setEliminando(null)
   }
 
-  if (!autorizado) return null
+  if (!autorizado) return (
+    <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Loader2 size={32} color="#e85d04" style={{ animation: 'spin 1s linear infinite' }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  )
 
   return (
     <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0ece3', fontFamily: "'DM Sans', sans-serif" }}>
@@ -134,7 +152,6 @@ export default function Superadmin() {
 
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 24px' }}>
 
-        {/* Métricas */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 32 }}>
           {[
             { label: 'Pendientes', value: talleres.filter(t => t.estado === 'pendiente').length, color: '#f59e0b' },
@@ -173,11 +190,9 @@ export default function Superadmin() {
                 <div key={taller.user_id} style={{ background: '#111', border: `1px solid ${taller.exento ? 'rgba(74,222,128,0.2)' : '#1e1e1e'}`, borderRadius: 12, padding: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
 
-                    {/* Info */}
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <p style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>{taller.nombre_taller}</p>
-                        {/* Badge exento */}
                         {taller.exento && (
                           <span style={{ fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(74,222,128,0.2)' }}>
                             ⭐ Exento
@@ -207,10 +222,7 @@ export default function Superadmin() {
                       </div>
                     </div>
 
-                    {/* Acciones */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
-
-                      {/* Estado + Eliminar */}
                       {actualizando === taller.user_id ? (
                         <Loader2 size={16} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
                       ) : (
@@ -230,39 +242,24 @@ export default function Superadmin() {
                               <XCircle size={12} /> Bloquear
                             </button>
                           )}
-                          {/* ── NUEVO: botón eliminar ── */}
                           {!taller.exento && (
-                            <button
-                              onClick={() => eliminarTaller(taller.user_id, taller.nombre_taller)}
-                              disabled={eliminando === taller.user_id}
-                              style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}
-                            >
+                            <button onClick={() => eliminarTaller(taller.user_id, taller.nombre_taller)} disabled={eliminando === taller.user_id} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
                               {eliminando === taller.user_id ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <><Trash2 size={12} /> Eliminar</>}
                             </button>
                           )}
                         </div>
                       )}
 
-                      {/* Plan + Exento */}
                       {taller.estado === 'activo' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {/* Toggle exento */}
-                          <button
-                            onClick={() => toggleExento(taller.user_id, taller.exento || false)}
-                            style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${taller.exento ? 'rgba(74,222,128,0.3)' : '#2a2a2a'}`, background: taller.exento ? 'rgba(74,222,128,0.05)' : 'transparent', color: taller.exento ? '#4ade80' : '#555', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
-                          >
+                          <button onClick={() => toggleExento(taller.user_id, taller.exento || false)} style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${taller.exento ? 'rgba(74,222,128,0.3)' : '#2a2a2a'}`, background: taller.exento ? 'rgba(74,222,128,0.05)' : 'transparent', color: taller.exento ? '#4ade80' : '#555', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
                             {taller.exento ? '⭐ Exento' : 'Marcar exento'}
                           </button>
-
                           <span style={{ fontSize: 11, color: '#555' }}>Plan:</span>
                           {cambiandoPlan === taller.user_id ? (
                             <Loader2 size={14} color="#666" style={{ animation: 'spin 1s linear infinite' }} />
                           ) : (
-                            <select
-                              value={taller.plan || 'trial'}
-                              onChange={e => cambiarPlan(taller.user_id, e.target.value)}
-                              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#f0ece3', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: 'none' }}
-                            >
+                            <select value={taller.plan || 'trial'} onChange={e => cambiarPlan(taller.user_id, e.target.value)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #2a2a2a', background: '#0a0a0a', color: '#f0ece3', fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", outline: 'none' }}>
                               {Object.entries(PLAN_LABELS).map(([key, val]) => (
                                 <option key={key} value={key}>{val.label} — {val.precio}</option>
                               ))}
